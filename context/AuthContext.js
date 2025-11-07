@@ -24,7 +24,7 @@ export const AuthProvider = ({ children }) => {
   console.log('🔹 Tentative de connexion avec:', email, password);
 
   try {
-    const response = await fetch('https://puny-insects-wash.loca.lt/api/auth/login', {
+    const response = await fetch('https://cute-dancers-tan.loca.lt/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -54,7 +54,7 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     try {
       if (token) {
-        await fetch('https://puny-insects-wash.loca.lt/api/auth/logout', {
+        await fetch('https://cute-dancers-tan.loca.lt/api/auth/logout', {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });

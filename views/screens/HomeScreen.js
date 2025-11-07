@@ -4,6 +4,8 @@ import { Bell, Settings, Search, Star, Zap, Flame, Grid, MessageCircle, User, Lo
 import { useNavigation } from '@react-navigation/native';
 import React, { useContext } from "react";
 import { AuthContext } from "../../context/AuthContext";
+import { Linking, Alert } from "react-native"
+import axios from "axios"
 
 
 
@@ -110,9 +112,30 @@ export default function HomeScreen({ navigation }) {
     alert(`Invitation sent to ${profile.firstName} ${profile.lastName}`)
   }
 
-  const handleUpgrade = () => {
-    alert("Upgrade to Premium to unlock top matches!")
+const handleUpgrade = async () => {
+  try {
+    // Récupère l’utilisateur courant depuis ton AuthContext
+    const userId = "6909e277ed9165ec58f4a494" // ⚠️ à remplacer par user.id de ton AuthContext
+
+    // Appelle ton backend (adapté à ton localhost ou ton IP LAN)
+    const response = await axios.post("https://cute-dancers-tan.loca.lt/api/payment/create-checkout-session", {
+      userId,
+    })
+
+    // Stripe renvoie l’URL de paiement
+    const { url } = response.data
+
+    if (url) {
+      // Ouvre Stripe Checkout dans le navigateur
+      Linking.openURL(url)
+    } else {
+      Alert.alert("Erreur", "Impossible d’ouvrir la page de paiement")
+    }
+  } catch (error) {
+    console.error(error)
+    Alert.alert("Erreur", "Échec de la création de la session de paiement")
   }
+}
 
   const handleSearch = () => {
     alert("Search functionality coming soon!")

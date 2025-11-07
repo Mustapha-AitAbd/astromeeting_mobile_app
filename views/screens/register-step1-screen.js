@@ -79,7 +79,7 @@ export default function RegisterStep1Screen({ navigation }) {
     setIsLoading(true)
 
     try {
-      const response = await fetch("https://puny-insects-wash.loca.lt/api/auth/register", {
+      const response = await fetch("https://every-cameras-wonder.loca.lt/api/auth/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -115,7 +115,7 @@ export default function RegisterStep1Screen({ navigation }) {
     setIsLoading(true)
     
     try {
-      const response = await fetch("https://puny-insects-wash.loca.lt/api/auth/google", {
+      const response = await fetch("https://every-cameras-wonder.loca.lt/api/auth/google", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ idToken: authentication.idToken }),
