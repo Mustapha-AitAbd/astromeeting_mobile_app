@@ -1,11 +1,15 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Modal } from "react-native"
 import { Bell, Settings, Search, Star, Zap, Flame, Grid, MessageCircle, User, Lock, LogOut } from "lucide-react-native"
 import { useNavigation } from '@react-navigation/native';
 import React, { useContext } from "react";
 import { AuthContext } from "../../context/AuthContext";
+
 import { Linking, Alert } from "react-native"
 import axios from "axios"
+import { API_BASE_URL } from '@env';
+
+
 
 
 
@@ -102,11 +106,33 @@ const MOCK_PROFILES = [
   },
 ]
 
+
+
 export default function HomeScreen({ navigation }) {
   const nav = useNavigation();
   const [activeTab, setActiveTab] = useState("profile")
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
+  const { token } = useContext(AuthContext); 
+  const [user, setUser] = useState(null);
+  const [loadingUser, setLoadingUser] = useState(true);
 
+  useEffect(() => {
+    const fetchUser = async () => {
+      try {
+        const response = await axios.get(`${API_BASE_URL}/api/users/me`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setUser(response.data);
+      } catch (error) {
+        console.error('Erreur récupération user:', error);
+        Alert.alert('Erreur', 'Impossible de récupérer le profil utilisateur');
+      } finally {
+        setLoadingUser(false);
+      }
+    };
+
+    if (token) fetchUser();
+  }, [token]);
 
   const handleSendInvitation = (profile) => {
     alert(`Invitation sent to ${profile.firstName} ${profile.lastName}`)
@@ -114,28 +140,42 @@ export default function HomeScreen({ navigation }) {
 
 const handleUpgrade = async () => {
   try {
-    // Récupère l’utilisateur courant depuis ton AuthContext
-    const userId = "6909e277ed9165ec58f4a494" // ⚠️ à remplacer par user.id de ton AuthContext
+    if (!token) {
+      Alert.alert('Erreur', 'Utilisateur non connecté');
+      return;
+    }
 
-    // Appelle ton backend (adapté à ton localhost ou ton IP LAN)
-    const response = await axios.post("https://cute-dancers-tan.loca.lt/api/payment/create-checkout-session", {
-      userId,
-    })
+    // Récupère les infos de l’utilisateur depuis le backend
+    const userResponse = await axios.get(`${API_BASE_URL}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
 
-    // Stripe renvoie l’URL de paiement
-    const { url } = response.data
+    const user = userResponse.data;
+    if (!user || !user.email) {
+      Alert.alert('Erreur', 'Impossible de récupérer les informations de l’utilisateur');
+      return;
+    }
 
+    const email = user.email;
+
+    // Crée la session Stripe
+    const response = await axios.post(
+      `${API_BASE_URL}/api/payment/create-checkout-session`,
+      { email },
+      { headers: { Authorization: `Bearer ${token}` } }
+    );
+
+    const { url } = response.data;
     if (url) {
-      // Ouvre Stripe Checkout dans le navigateur
-      Linking.openURL(url)
+      Linking.openURL(url); // Ouvre Stripe Checkout
     } else {
-      Alert.alert("Erreur", "Impossible d’ouvrir la page de paiement")
+      Alert.alert('Erreur', 'Impossible d’ouvrir la page de paiement');
     }
   } catch (error) {
-    console.error(error)
-    Alert.alert("Erreur", "Échec de la création de la session de paiement")
+    console.error('Erreur payment:', error);
+    Alert.alert('Erreur', 'Échec de la création de la session de paiement');
   }
-}
+};
 
   const handleSearch = () => {
     alert("Search functionality coming soon!")
@@ -149,48 +189,57 @@ const handleLogout = async () => {
   alert("Déconnexion réussie !");
 };
   const renderProfileCard = (profile) => {
-    const isLocked = profile.isPremium
+  // Si le profil affiché est premium et que l'utilisateur n'est PAS premium → le bouton est verrouillé
+  const isLocked = profile.isPremium;
 
-    return (
-      <View key={profile.id} style={styles.matchCard}>
-        <View style={styles.matchCardHeader}>
-          <View style={styles.matchProfileImage}>
-            <Text style={styles.matchInitials}>
-              {profile.firstName[0]}
-              {profile.lastName[0]}
-            </Text>
-          </View>
-          <View style={styles.matchInfo}>
-            <Text style={styles.matchName}>
-              {profile.firstName} {profile.lastName}
-            </Text>
-            <Text style={styles.matchLocation}>{profile.location}</Text>
-            <View style={styles.compatibilityContainer}>
-              <View
-                style={[
-                  styles.compatibilityBadge,
-                  { backgroundColor: profile.compatibility >= 70 ? "#4CAF50" : "#FF9800" },
-                ]}
-              >
-                <Text style={styles.compatibilityText}>{profile.compatibility}% Compatible</Text>
-              </View>
+  return (
+    <View key={profile.id} style={styles.matchCard}>
+      <View style={styles.matchCardHeader}>
+        <View style={styles.matchProfileImage}>
+          <Text style={styles.matchInitials}>
+            {profile.firstName[0]}
+            {profile.lastName[0]}
+          </Text>
+        </View>
+        <View style={styles.matchInfo}>
+          <Text style={styles.matchName}>
+            {profile.firstName} {profile.lastName}
+          </Text>
+          <Text style={styles.matchLocation}>{profile.location}</Text>
+          <View style={styles.compatibilityContainer}>
+            <View
+              style={[
+                styles.compatibilityBadge,
+                { backgroundColor: profile.compatibility >= 70 ? "#4CAF50" : "#FF9800" },
+              ]}
+            >
+              <Text style={styles.compatibilityText}>
+                {profile.compatibility}% Compatible
+              </Text>
             </View>
           </View>
         </View>
-
-        {isLocked ? (
-          <TouchableOpacity style={styles.lockedButton} onPress={handleUpgrade}>
-            <Lock size={16} color="#666666" style={{ marginRight: 8 }} />
-            <Text style={styles.lockedButtonText}>Unlock with Premium</Text>
-          </TouchableOpacity>
-        ) : (
-          <TouchableOpacity style={styles.inviteButton} onPress={() => handleSendInvitation(profile)}>
-            <Text style={styles.inviteButtonText}>Send Invitation</Text>
-          </TouchableOpacity>
-        )}
       </View>
-    )
-  }
+
+      {isLocked ? (
+        // 🔒 Bouton verrouillé si l'utilisateur n'est pas premium
+        <TouchableOpacity style={styles.lockedButton} onPress={handleUpgrade}>
+          <Lock size={16} color="#666666" style={{ marginRight: 8 }} />
+          <Text style={styles.lockedButtonText}>Unlock with Premium</Text>
+        </TouchableOpacity>
+      ) : (
+        // ✅ Bouton normal si user premium ou profil non premium
+        <TouchableOpacity
+          style={styles.inviteButton}
+          onPress={() => handleSendInvitation(profile)}
+        >
+          <Text style={styles.inviteButtonText}>Send Invitation</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
+
 
   return (
     <View style={styles.container}>
