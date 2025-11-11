@@ -124,8 +124,8 @@ export default function HomeScreen({ navigation }) {
         });
         setUser(response.data);
       } catch (error) {
-        console.error('Erreur récupération user:', error);
-        Alert.alert('Erreur', 'Impossible de récupérer le profil utilisateur');
+        console.error('User recovery error:', error);
+        Alert.alert('Error', 'Unable to retrieve user profile');
       } finally {
         setLoadingUser(false);
       }
@@ -141,18 +141,18 @@ export default function HomeScreen({ navigation }) {
 const handleUpgrade = async () => {
   try {
     if (!token) {
-      Alert.alert('Erreur', 'Utilisateur non connecté');
+      Alert.alert('Error', 'User not logged in');
       return;
     }
 
-    // Récupère les infos de l’utilisateur depuis le backend
+    // Retrieve user info from the backend
     const userResponse = await axios.get(`${API_BASE_URL}/api/auth/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
 
     const user = userResponse.data;
     if (!user || !user.email) {
-      Alert.alert('Erreur', 'Impossible de récupérer les informations de l’utilisateur');
+      Alert.alert('Error', 'Unable to retrieve user information');
       return;
     }
 
@@ -167,13 +167,13 @@ const handleUpgrade = async () => {
 
     const { url } = response.data;
     if (url) {
-      Linking.openURL(url); // Ouvre Stripe Checkout
+      Linking.openURL(url); // Open Stripe Checkout
     } else {
-      Alert.alert('Erreur', 'Impossible d’ouvrir la page de paiement');
+      Alert.alert('Error', 'Unable to open payment page');
     }
   } catch (error) {
-    console.error('Erreur payment:', error);
-    Alert.alert('Erreur', 'Échec de la création de la session de paiement');
+    console.error('Payment error:', error);
+    Alert.alert('Error', 'Failed to create payment session');
   }
 };
 
@@ -185,11 +185,11 @@ const { logout } = useContext(AuthContext);
 
 const handleLogout = async () => {
   setShowSettingsMenu(false);
-  await logout(); // Déconnecte l'utilisateur et met isAuthenticated à false
-  alert("Déconnexion réussie !");
+  await logout(); 
+  alert("Logout successful!");
 };
   const renderProfileCard = (profile) => {
-  // Si le profil affiché est premium et que l'utilisateur n'est PAS premium → le bouton est verrouillé
+  // If the displayed profile is premium and the user is NOT premium → the button is locked
   const isLocked = profile.isPremium;
 
   return (
@@ -222,13 +222,13 @@ const handleLogout = async () => {
       </View>
 
       {isLocked ? (
-        // 🔒 Bouton verrouillé si l'utilisateur n'est pas premium
+       
         <TouchableOpacity style={styles.lockedButton} onPress={handleUpgrade}>
           <Lock size={16} color="#666666" style={{ marginRight: 8 }} />
           <Text style={styles.lockedButtonText}>Unlock with Premium</Text>
         </TouchableOpacity>
       ) : (
-        // ✅ Bouton normal si user premium ou profil non premium
+        // ✅ Normal button if user is premium or profile is not premium
         <TouchableOpacity
           style={styles.inviteButton}
           onPress={() => handleSendInvitation(profile)}

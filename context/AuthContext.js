@@ -23,7 +23,7 @@ export const AuthProvider = ({ children }) => {
 
   // ---- LOGIN ----
  const login = async (email, password) => {
-  console.log('🔹 Tentative de connexion avec:', email, password);
+  console.log('🔹 Attempting to connect with:', email, password);
 
   try {
     const response = await fetch(`${API_BASE_URL}/api/auth/login`,{
@@ -34,20 +34,20 @@ export const AuthProvider = ({ children }) => {
 
     console.log('🔹 Status HTTP:', response.status);
     const data = await response.json();
-    console.log('🔹 Réponse backend:', data);
+    console.log('🔹 Backend response:', data);
 
     if (response.ok) {
       await AsyncStorage.setItem('token', data.token);
       setToken(data.token);
       setIsAuthenticated(true);
-      console.log('✅ Authentification réussie ! Token enregistré.');
+      console.log('✅ Authentication successful! Token saved.');
     } else {
-      console.warn('⚠️ Échec du login:', data.message || 'Invalid credentials');
-      alert(data.message || 'Identifiants invalides');
+      console.warn('⚠️ Login failed:', data.message || 'Invalid credentials');
+      alert(data.message || 'Invalid credentials');
     }
   } catch (error) {
-    console.error('🔥 Erreur réseau:', error);
-    alert('Erreur de connexion au serveur');
+    console.error('🔥 Network error:', error);
+    alert('Server connection error');
   }
 };
 
