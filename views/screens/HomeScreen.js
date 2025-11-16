@@ -9,10 +9,6 @@ import { Linking, Alert } from "react-native"
 import axios from "axios"
 import { API_BASE_URL } from '@env';
 
-
-
-
-
 const MOCK_PROFILES = [
   {
     id: 1,
@@ -106,8 +102,6 @@ const MOCK_PROFILES = [
   },
 ]
 
-
-
 export default function HomeScreen({ navigation }) {
   const nav = useNavigation();
   const [activeTab, setActiveTab] = useState("profile")
@@ -115,14 +109,23 @@ export default function HomeScreen({ navigation }) {
   const { token } = useContext(AuthContext); 
   const [user, setUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
+  const [isPremiumUser, setIsPremiumUser] = useState(false);
 
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        const response = await axios.get(`${API_BASE_URL}/api/users/me`, {
+        const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         setUser(response.data);
+        
+        // Vérifier si l'utilisateur est premium
+        const userSubscription = response.data?.subscription;
+        if (userSubscription && userSubscription.plan === "premium" && userSubscription.active === true) {
+          setIsPremiumUser(true);
+        } else {
+          setIsPremiumUser(false);
+        }
       } catch (error) {
         console.error('User recovery error:', error);
         Alert.alert('Error', 'Unable to retrieve user profile');
@@ -138,108 +141,120 @@ export default function HomeScreen({ navigation }) {
     alert(`Invitation sent to ${profile.firstName} ${profile.lastName}`)
   }
 
-const handleUpgrade = async () => {
-  try {
-    if (!token) {
-      Alert.alert('Error', 'User not logged in');
-      return;
+  const handleUpgrade = async () => {
+    try {
+      if (!token) {
+        Alert.alert('Error', 'User not logged in');
+        return;
+      }
+
+      // Retrieve user info from the backend
+      const userResponse = await axios.get(`${API_BASE_URL}/api/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      const user = userResponse.data;
+      if (!user || !user.email) {
+        Alert.alert('Error', 'Unable to retrieve user information');
+        return;
+      }
+
+      const email = user.email;
+
+      // Crée la session Stripe
+      const response = await axios.post(
+        `${API_BASE_URL}/api/payment/create-checkout-session`,
+        { email },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      const { url } = response.data;
+      if (url) {
+        Linking.openURL(url); // Open Stripe Checkout
+      } else {
+        Alert.alert('Error', 'Unable to open payment page');
+      }
+    } catch (error) {
+      console.error('Payment error:', error);
+      Alert.alert('Error', 'Failed to create payment session');
     }
-
-    // Retrieve user info from the backend
-    const userResponse = await axios.get(`${API_BASE_URL}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    const user = userResponse.data;
-    if (!user || !user.email) {
-      Alert.alert('Error', 'Unable to retrieve user information');
-      return;
-    }
-
-    const email = user.email;
-
-    // Crée la session Stripe
-    const response = await axios.post(
-      `${API_BASE_URL}/api/payment/create-checkout-session`,
-      { email },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-
-    const { url } = response.data;
-    if (url) {
-      Linking.openURL(url); // Open Stripe Checkout
-    } else {
-      Alert.alert('Error', 'Unable to open payment page');
-    }
-  } catch (error) {
-    console.error('Payment error:', error);
-    Alert.alert('Error', 'Failed to create payment session');
-  }
-};
+  };
 
   const handleSearch = () => {
     alert("Search functionality coming soon!")
   }
 
-const { logout } = useContext(AuthContext);
+  const { logout } = useContext(AuthContext);
 
-const handleLogout = async () => {
-  setShowSettingsMenu(false);
-  await logout(); 
-  alert("Logout successful!");
-};
-  const renderProfileCard = (profile) => {
-  // If the displayed profile is premium and the user is NOT premium → the button is locked
-  const isLocked = profile.isPremium;
+  const handleLogout = async () => {
+    setShowSettingsMenu(false);
+    await logout(); 
+    alert("Logout successful!");
+  };
 
-  return (
-    <View key={profile.id} style={styles.matchCard}>
-      <View style={styles.matchCardHeader}>
-        <View style={styles.matchProfileImage}>
-          <Text style={styles.matchInitials}>
-            {profile.firstName[0]}
-            {profile.lastName[0]}
-          </Text>
-        </View>
-        <View style={styles.matchInfo}>
-          <Text style={styles.matchName}>
-            {profile.firstName} {profile.lastName}
-          </Text>
-          <Text style={styles.matchLocation}>{profile.location}</Text>
-          <View style={styles.compatibilityContainer}>
-            <View
-              style={[
-                styles.compatibilityBadge,
-                { backgroundColor: profile.compatibility >= 70 ? "#4CAF50" : "#FF9800" },
-              ]}
-            >
-              <Text style={styles.compatibilityText}>
-                {profile.compatibility}% Compatible
-              </Text>
+  const renderProfileCard = (profile, index) => {
+    // Si l'utilisateur est premium, tous les profils sont débloqués
+    // Sinon, seuls les 5 premiers profils affichent le bouton "Unlock with Premium"
+    const isLocked = !isPremiumUser && index >= 5;
+
+    return (
+      <View key={profile.id} style={styles.matchCard}>
+        <View style={styles.matchCardHeader}>
+          <View style={styles.matchProfileImage}>
+            <Text style={styles.matchInitials}>
+              {profile.firstName[0]}
+              {profile.lastName[0]}
+            </Text>
+          </View>
+          <View style={styles.matchInfo}>
+            <Text style={styles.matchName}>
+              {profile.firstName} {profile.lastName}
+            </Text>
+            <Text style={styles.matchLocation}>{profile.location}</Text>
+            <View style={styles.compatibilityContainer}>
+              <View
+                style={[
+                  styles.compatibilityBadge,
+                  { backgroundColor: profile.compatibility >= 70 ? "#4CAF50" : "#FF9800" },
+                ]}
+              >
+                <Text style={styles.compatibilityText}>
+                  {profile.compatibility}% Compatible
+                </Text>
+              </View>
             </View>
           </View>
         </View>
+
+        {isLocked ? (
+          <TouchableOpacity style={styles.lockedButton} onPress={handleUpgrade}>
+            <Lock size={16} color="#666666" style={{ marginRight: 8 }} />
+            <Text style={styles.lockedButtonText}>Unlock with Premium</Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={styles.inviteButton}
+            onPress={() => handleSendInvitation(profile)}
+          >
+            <Text style={styles.inviteButtonText}>Send Invitation</Text>
+          </TouchableOpacity>
+        )}
       </View>
+    );
+  };
 
-      {isLocked ? (
-       
-        <TouchableOpacity style={styles.lockedButton} onPress={handleUpgrade}>
-          <Lock size={16} color="#666666" style={{ marginRight: 8 }} />
-          <Text style={styles.lockedButtonText}>Unlock with Premium</Text>
-        </TouchableOpacity>
-      ) : (
-        // ✅ Normal button if user is premium or profile is not premium
-        <TouchableOpacity
-          style={styles.inviteButton}
-          onPress={() => handleSendInvitation(profile)}
-        >
-          <Text style={styles.inviteButtonText}>Send Invitation</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-};
-
+  // Calculer l'âge à partir de la date de naissance
+  const calculateAge = (dateOfBirth) => {
+    if (!dateOfBirth) return '';
+    const today = new Date();
+    const birthDate = new Date(dateOfBirth);
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return age;
+  };
 
   return (
     <View style={styles.container}>
@@ -285,7 +300,9 @@ const handleLogout = async () => {
           <View style={styles.profileHeader}>
             <View style={styles.profileImageContainer}>
               <View style={styles.profileImage}>
-                <Text style={styles.profileImageText}>M</Text>
+                <Text style={styles.profileImageText}>
+                  {user?.name ? user.name.charAt(0).toUpperCase() : 'M'}
+                </Text>
               </View>
               <View style={styles.completionBadge}>
                 <Text style={styles.completionText}>60%</Text>
@@ -293,7 +310,9 @@ const handleLogout = async () => {
             </View>
             <View style={styles.profileDetails}>
               <View style={styles.nameRow}>
-                <Text style={styles.profileName}>Mustapha, 24</Text>
+                <Text style={styles.profileName}>
+                  {user?.name || 'Mustapha'}{user?.dateOfBirth ? `, ${calculateAge(user.dateOfBirth)}` : ', 24'}
+                </Text>
                 <Text style={styles.verifiedBadge}>✓</Text>
               </View>
               <TouchableOpacity style={styles.completeProfileButton}>
@@ -318,7 +337,9 @@ const handleLogout = async () => {
           </View>
           <View style={styles.featureCard}>
             <Flame size={32} color="#FF6B6B" />
-            <Text style={styles.featureTitle}>0 Subscription</Text>
+            <Text style={styles.featureTitle}>
+              {isPremiumUser ? 'Premium' : '0 Subscription'}
+            </Text>
           </View>
         </View>
 
@@ -329,11 +350,10 @@ const handleLogout = async () => {
               <Text style={styles.sectionSubtitle}>Sorted by compatibility</Text>
             </View>
             <TouchableOpacity style={styles.searchButton} onPress={handleSearch}>
-              
               <Search size={20} color="#8B3A8B" />
             </TouchableOpacity>
           </View>
-          {MOCK_PROFILES.map(renderProfileCard)}
+          {MOCK_PROFILES.map((profile, index) => renderProfileCard(profile, index))}
         </View>
 
         <View style={styles.upgradeSection}>
@@ -389,8 +409,6 @@ const handleLogout = async () => {
         <TouchableOpacity  style={styles.navItem}  onPress={() => { setActiveTab("explore"); navigation.navigate("Profile"); }}>
           <Grid size={28} color={activeTab === "explore" ? "#FF6B6B" : "#CCCCCC"} />
         </TouchableOpacity>
-
-
 
         <TouchableOpacity style={styles.navItem} onPress={() => setActiveTab("star")}>
           <Star size={28} color={activeTab === "star" ? "#FF6B6B" : "#CCCCCC"} />
