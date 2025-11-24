@@ -16,8 +16,12 @@ import {
 import { LinearGradient } from "expo-linear-gradient"
 import * as WebBrowser from "expo-web-browser"
 import * as Google from "expo-auth-session/providers/google"
+import AsyncStorage from "@react-native-async-storage/async-storage"
 
 WebBrowser.maybeCompleteAuthSession()
+
+// Configuration de l'URL de base de l'API
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.100:5000"
 
 export default function RegisterStep1Screen({ navigation }) {
   const [email, setEmail] = useState("")
@@ -26,10 +30,10 @@ export default function RegisterStep1Screen({ navigation }) {
   const [error, setError] = useState("")
   const [isLoading, setIsLoading] = useState(false)
 
-  // --- CONFIG GOOGLE OAUTH (iOS uniquement) ---
+  // --- CONFIG GOOGLE OAUTH ---
   const [request, response, promptAsync] = Google.useAuthRequest({
-    iosClientId: "576392076825-7cnap922s5u771d1u37b6q47ba0236a1.apps.googleusercontent.com ",
-    // Pas besoin d'autres client IDs si on veut seulement iOS
+    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
   })
 
   // Handle Google OAuth response
@@ -79,27 +83,61 @@ export default function RegisterStep1Screen({ navigation }) {
     setIsLoading(true)
 
     try {
-      const response = await fetch("https://every-cameras-wonder.loca.lt/api/auth/register", {
+      console.log("📤 Inscription à:", `${API_BASE_URL}/api/auth/register`)
+      
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ 
+          email, 
+          password,
+          name: email.split('@')[0],
+          dateOfBirth: new Date('2000-01-01'),
+          gender: 'F'
+        }),
       })
 
       const data = await response.json()
+      console.log("📥 Réponse du serveur:", data)
 
       if (!response.ok) {
-        console.log("Register error:", data)
+        console.log("❌ Erreur d'inscription:", data)
         setError(data.message || "Registration failed")
         return
       }
 
-      Alert.alert("Success", "Account created successfully!")
-      navigation.navigate("RegisterStep2", { email, password })
+      // Sauvegarder le token et les infos utilisateur
+      if (data.token) {
+        await AsyncStorage.setItem('userToken', data.token)
+        await AsyncStorage.setItem('userId', data.user.id)
+        await AsyncStorage.setItem('userEmail', data.user.email)
+        console.log("✅ Token sauvegardé")
+      }
+
+      Alert.alert(
+        "Success! 📧", 
+        "Account created successfully! A verification code has been sent to your email.",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Navigation vers l'écran de vérification d'email
+              navigation.navigate("EmailVerification", { 
+                email: data.user.email,
+                userId: data.user.id,
+                token: data.token,
+                user: data.user
+              })
+            }
+          }
+        ]
+      )
+
     } catch (error) {
-      console.error("Network error:", error)
-      setError("Unable to connect to the server")
+      console.error("❌ Erreur réseau:", error)
+      setError("Unable to connect to the server. Please check your internet connection.")
     } finally {
       setIsLoading(false)
     }
@@ -115,25 +153,66 @@ export default function RegisterStep1Screen({ navigation }) {
     setIsLoading(true)
     
     try {
-      const response = await fetch("https://sixty-lines-cry.loca.lt/api/auth/google", {
+      console.log("📤 Connexion Google à:", `${API_BASE_URL}/api/auth/google`)
+      
+      const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ idToken: authentication.idToken }),
+        headers: { 
+          "Content-Type": "application/json" 
+        },
+        body: JSON.stringify({ 
+          idToken: authentication.idToken 
+        }),
       })
 
       const data = await response.json()
+      console.log("📥 Réponse Google du serveur:", data)
 
       if (!response.ok) {
-        console.log("Google sign-up error:", data)
+        console.log("❌ Erreur de connexion Google:", data)
         setError(data.message || "Unable to sign up with Google")
         return
       }
 
-      Alert.alert("Success", "Signed up successfully with Google!")
-      navigation.navigate("RegisterStep3", { registrationMethod: "google", user: data.user })
+      // Sauvegarder le token dans AsyncStorage
+      if (data.token) {
+        await AsyncStorage.setItem('userToken', data.token)
+        await AsyncStorage.setItem('userId', data.user.id)
+        await AsyncStorage.setItem('userEmail', data.user.email)
+        console.log("✅ Token Google sauvegardé")
+      }
+
+      Alert.alert(
+        "Success! 🎉", 
+        "Signed up successfully with Google!",
+        [
+          {
+            text: "OK",
+            onPress: () => {
+              // Si l'email est déjà vérifié via Google, aller directement au profil
+              if (data.user.emailVerified) {
+                navigation.navigate("Home", { 
+                  user: data.user,
+                  token: data.token
+                })
+              } else {
+                // Sinon, demander la vérification
+                navigation.navigate("EmailVerification", { 
+                  email: data.user.email,
+                  userId: data.user.id,
+                  token: data.token,
+                  user: data.user,
+                  fromGoogle: true
+                })
+              }
+            }
+          }
+        ]
+      )
+
     } catch (error) {
-      console.error("Google Sign-In Error:", error)
-      setError("Google sign-in failed")
+      console.error("❌ Erreur de connexion Google:", error)
+      setError("Google sign-in failed. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -141,20 +220,16 @@ export default function RegisterStep1Screen({ navigation }) {
 
   // --- GOOGLE REGISTER ---
   const handleGoogleRegister = async () => {
-    if (Platform.OS !== "ios") {
-      Alert.alert("Not Available", "Google Sign-In is only available on iOS")
-      return
-    }
-
     if (!request) {
       setError("Google Sign-In is not ready yet. Please try again.")
       return
     }
 
     try {
+      console.log("🔐 Ouverture de Google Sign-In...")
       await promptAsync()
     } catch (error) {
-      console.error("Google Sign-In Error:", error)
+      console.error("❌ Erreur d'ouverture Google Sign-In:", error)
       setError("Failed to open Google Sign-In")
     }
   }
@@ -246,29 +321,24 @@ export default function RegisterStep1Screen({ navigation }) {
             )}
           </TouchableOpacity>
 
-          {/* Google Sign-up Button - iOS uniquement */}
-          {Platform.OS === "ios" && (
-            <>
-              {/* Divider */}
-              <View style={styles.dividerContainer}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>OR</Text>
-                <View style={styles.dividerLine} />
-              </View>
+          {/* Divider */}
+          <View style={styles.dividerContainer}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.dividerLine} />
+          </View>
 
-              {/* Google Sign-up Button */}
-              <TouchableOpacity
-                style={[styles.googleButton, (!request || isLoading) && styles.buttonDisabled]}
-                disabled={!request || isLoading}
-                onPress={handleGoogleRegister}
-              >
-                <View style={styles.socialButtonContent}>
-                  <Text style={styles.googleIcon}>G</Text>
-                  <Text style={styles.googleButtonText}>Sign up with Google</Text>
-                </View>
-              </TouchableOpacity>
-            </>
-          )}
+          {/* Google Sign-up Button */}
+          <TouchableOpacity
+            style={[styles.googleButton, (!request || isLoading) && styles.buttonDisabled]}
+            disabled={!request || isLoading}
+            onPress={handleGoogleRegister}
+          >
+            <View style={styles.socialButtonContent}>
+              <Text style={styles.googleIcon}>G</Text>
+              <Text style={styles.googleButtonText}>Sign up with Google</Text>
+            </View>
+          </TouchableOpacity>
 
           {/* Bottom Links */}
           <View style={styles.bottomContainer}>

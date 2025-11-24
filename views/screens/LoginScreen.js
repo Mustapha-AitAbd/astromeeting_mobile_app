@@ -4,6 +4,8 @@ import { useState, useContext } from "react"
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Image, Animated } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
 import { AuthContext } from "../../context/AuthContext"
+import * as AuthSession from 'expo-auth-session';
+
 
 export default function LoginScreen({ navigation }) {
   const { login } = useContext(AuthContext)
@@ -14,6 +16,7 @@ export default function LoginScreen({ navigation }) {
   const [isLoading, setIsLoading] = useState(false)
 
   const handleLogin = async () => {
+    console.log("Redirect URI =", AuthSession.makeRedirectUri());
     setError("") // Reset error
     setIsLoading(true) // Start loading
     try {

@@ -5,6 +5,7 @@ import RegisterStep2Screen from "../views/screens/register-step2-screen"
 import RegisterStep3Screen from "../views/screens/register-step3-screen"
 import RegisterStep4Screen from "../views/screens/register-step4-screen"
 import RegisterStep5Screen from "../views/screens/register-step5-screen"
+import EmailVerificationScreen from "../views/screens/EmailVerification"
 
 const Stack = createNativeStackNavigator()
 
@@ -22,6 +23,7 @@ export default function AuthNavigator() {
       <Stack.Screen name="RegisterStep3" component={RegisterStep3Screen} />
       <Stack.Screen name="RegisterStep4" component={RegisterStep4Screen} />
       <Stack.Screen name="RegisterStep5" component={RegisterStep5Screen} />
+      <Stack.Screen name="EmailVerification" component={EmailVerificationScreen} options={{ headerShown: false }} />
     </Stack.Navigator>
   )
 }
