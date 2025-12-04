@@ -12,9 +12,209 @@ import {
   Platform,
   Modal,
   FlatList,
+  Alert,
+  ActivityIndicator,
 } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
-import { countriesData, getCitiesByCountryCode } from "../../data/countries-cities"
+import AsyncStorage from '@react-native-async-storage/async-storage'
+
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL
+
+// Liste complète des pays
+const allCountries = [
+  { code: "AF", name: "Afghanistan", flag: "🇦🇫" },
+  { code: "AL", name: "Albania", flag: "🇦🇱" },
+  { code: "DZ", name: "Algeria", flag: "🇩🇿" },
+  { code: "AD", name: "Andorra", flag: "🇦🇩" },
+  { code: "AO", name: "Angola", flag: "🇦🇴" },
+  { code: "AR", name: "Argentina", flag: "🇦🇷" },
+  { code: "AM", name: "Armenia", flag: "🇦🇲" },
+  { code: "AU", name: "Australia", flag: "🇦🇺" },
+  { code: "AT", name: "Austria", flag: "🇦🇹" },
+  { code: "AZ", name: "Azerbaijan", flag: "🇦🇿" },
+  { code: "BS", name: "Bahamas", flag: "🇧🇸" },
+  { code: "BH", name: "Bahrain", flag: "🇧🇭" },
+  { code: "BD", name: "Bangladesh", flag: "🇧🇩" },
+  { code: "BB", name: "Barbados", flag: "🇧🇧" },
+  { code: "BY", name: "Belarus", flag: "🇧🇾" },
+  { code: "BE", name: "Belgium", flag: "🇧🇪" },
+  { code: "BZ", name: "Belize", flag: "🇧🇿" },
+  { code: "BJ", name: "Benin", flag: "🇧🇯" },
+  { code: "BT", name: "Bhutan", flag: "🇧🇹" },
+  { code: "BO", name: "Bolivia", flag: "🇧🇴" },
+  { code: "BA", name: "Bosnia and Herzegovina", flag: "🇧🇦" },
+  { code: "BW", name: "Botswana", flag: "🇧🇼" },
+  { code: "BR", name: "Brazil", flag: "🇧🇷" },
+  { code: "BN", name: "Brunei", flag: "🇧🇳" },
+  { code: "BG", name: "Bulgaria", flag: "🇧🇬" },
+  { code: "BF", name: "Burkina Faso", flag: "🇧🇫" },
+  { code: "BI", name: "Burundi", flag: "🇧🇮" },
+  { code: "KH", name: "Cambodia", flag: "🇰🇭" },
+  { code: "CM", name: "Cameroon", flag: "🇨🇲" },
+  { code: "CA", name: "Canada", flag: "🇨🇦" },
+  { code: "CV", name: "Cape Verde", flag: "🇨🇻" },
+  { code: "CF", name: "Central African Republic", flag: "🇨🇫" },
+  { code: "TD", name: "Chad", flag: "🇹🇩" },
+  { code: "CL", name: "Chile", flag: "🇨🇱" },
+  { code: "CN", name: "China", flag: "🇨🇳" },
+  { code: "CO", name: "Colombia", flag: "🇨🇴" },
+  { code: "KM", name: "Comoros", flag: "🇰🇲" },
+  { code: "CG", name: "Congo", flag: "🇨🇬" },
+  { code: "CR", name: "Costa Rica", flag: "🇨🇷" },
+  { code: "HR", name: "Croatia", flag: "🇭🇷" },
+  { code: "CU", name: "Cuba", flag: "🇨🇺" },
+  { code: "CY", name: "Cyprus", flag: "🇨🇾" },
+  { code: "CZ", name: "Czech Republic", flag: "🇨🇿" },
+  { code: "DK", name: "Denmark", flag: "🇩🇰" },
+  { code: "DJ", name: "Djibouti", flag: "🇩🇯" },
+  { code: "DM", name: "Dominica", flag: "🇩🇲" },
+  { code: "DO", name: "Dominican Republic", flag: "🇩🇴" },
+  { code: "EC", name: "Ecuador", flag: "🇪🇨" },
+  { code: "EG", name: "Egypt", flag: "🇪🇬" },
+  { code: "SV", name: "El Salvador", flag: "🇸🇻" },
+  { code: "GQ", name: "Equatorial Guinea", flag: "🇬🇶" },
+  { code: "ER", name: "Eritrea", flag: "🇪🇷" },
+  { code: "EE", name: "Estonia", flag: "🇪🇪" },
+  { code: "ET", name: "Ethiopia", flag: "🇪🇹" },
+  { code: "FJ", name: "Fiji", flag: "🇫🇯" },
+  { code: "FI", name: "Finland", flag: "🇫🇮" },
+  { code: "FR", name: "France", flag: "🇫🇷" },
+  { code: "GA", name: "Gabon", flag: "🇬🇦" },
+  { code: "GM", name: "Gambia", flag: "🇬🇲" },
+  { code: "GE", name: "Georgia", flag: "🇬🇪" },
+  { code: "DE", name: "Germany", flag: "🇩🇪" },
+  { code: "GH", name: "Ghana", flag: "🇬🇭" },
+  { code: "GR", name: "Greece", flag: "🇬🇷" },
+  { code: "GD", name: "Grenada", flag: "🇬🇩" },
+  { code: "GT", name: "Guatemala", flag: "🇬🇹" },
+  { code: "GN", name: "Guinea", flag: "🇬🇳" },
+  { code: "GW", name: "Guinea-Bissau", flag: "🇬🇼" },
+  { code: "GY", name: "Guyana", flag: "🇬🇾" },
+  { code: "HT", name: "Haiti", flag: "🇭🇹" },
+  { code: "HN", name: "Honduras", flag: "🇭🇳" },
+  { code: "HU", name: "Hungary", flag: "🇭🇺" },
+  { code: "IS", name: "Iceland", flag: "🇮🇸" },
+  { code: "IN", name: "India", flag: "🇮🇳" },
+  { code: "ID", name: "Indonesia", flag: "🇮🇩" },
+  { code: "IR", name: "Iran", flag: "🇮🇷" },
+  { code: "IQ", name: "Iraq", flag: "🇮🇶" },
+  { code: "IE", name: "Ireland", flag: "🇮🇪" },
+  { code: "IT", name: "Italy", flag: "🇮🇹" },
+  { code: "CI", name: "Ivory Coast", flag: "🇨🇮" },
+  { code: "JM", name: "Jamaica", flag: "🇯🇲" },
+  { code: "JP", name: "Japan", flag: "🇯🇵" },
+  { code: "JO", name: "Jordan", flag: "🇯🇴" },
+  { code: "KZ", name: "Kazakhstan", flag: "🇰🇿" },
+  { code: "KE", name: "Kenya", flag: "🇰🇪" },
+  { code: "KI", name: "Kiribati", flag: "🇰🇮" },
+  { code: "KW", name: "Kuwait", flag: "🇰🇼" },
+  { code: "KG", name: "Kyrgyzstan", flag: "🇰🇬" },
+  { code: "LA", name: "Laos", flag: "🇱🇦" },
+  { code: "LV", name: "Latvia", flag: "🇱🇻" },
+  { code: "LB", name: "Lebanon", flag: "🇱🇧" },
+  { code: "LS", name: "Lesotho", flag: "🇱🇸" },
+  { code: "LR", name: "Liberia", flag: "🇱🇷" },
+  { code: "LY", name: "Libya", flag: "🇱🇾" },
+  { code: "LI", name: "Liechtenstein", flag: "🇱🇮" },
+  { code: "LT", name: "Lithuania", flag: "🇱🇹" },
+  { code: "LU", name: "Luxembourg", flag: "🇱🇺" },
+  { code: "MK", name: "North Macedonia", flag: "🇲🇰" },
+  { code: "MG", name: "Madagascar", flag: "🇲🇬" },
+  { code: "MW", name: "Malawi", flag: "🇲🇼" },
+  { code: "MY", name: "Malaysia", flag: "🇲🇾" },
+  { code: "MV", name: "Maldives", flag: "🇲🇻" },
+  { code: "ML", name: "Mali", flag: "🇲🇱" },
+  { code: "MT", name: "Malta", flag: "🇲🇹" },
+  { code: "MH", name: "Marshall Islands", flag: "🇲🇭" },
+  { code: "MR", name: "Mauritania", flag: "🇲🇷" },
+  { code: "MU", name: "Mauritius", flag: "🇲🇺" },
+  { code: "MX", name: "Mexico", flag: "🇲🇽" },
+  { code: "FM", name: "Micronesia", flag: "🇫🇲" },
+  { code: "MD", name: "Moldova", flag: "🇲🇩" },
+  { code: "MC", name: "Monaco", flag: "🇲🇨" },
+  { code: "MN", name: "Mongolia", flag: "🇲🇳" },
+  { code: "ME", name: "Montenegro", flag: "🇲🇪" },
+  { code: "MA", name: "Morocco", flag: "🇲🇦" },
+  { code: "MZ", name: "Mozambique", flag: "🇲🇿" },
+  { code: "MM", name: "Myanmar", flag: "🇲🇲" },
+  { code: "NA", name: "Namibia", flag: "🇳🇦" },
+  { code: "NR", name: "Nauru", flag: "🇳🇷" },
+  { code: "NP", name: "Nepal", flag: "🇳🇵" },
+  { code: "NL", name: "Netherlands", flag: "🇳🇱" },
+  { code: "NZ", name: "New Zealand", flag: "🇳🇿" },
+  { code: "NI", name: "Nicaragua", flag: "🇳🇮" },
+  { code: "NE", name: "Niger", flag: "🇳🇪" },
+  { code: "NG", name: "Nigeria", flag: "🇳🇬" },
+  { code: "KP", name: "North Korea", flag: "🇰🇵" },
+  { code: "NO", name: "Norway", flag: "🇳🇴" },
+  { code: "OM", name: "Oman", flag: "🇴🇲" },
+  { code: "PK", name: "Pakistan", flag: "🇵🇰" },
+  { code: "PW", name: "Palau", flag: "🇵🇼" },
+  { code: "PS", name: "Palestine", flag: "🇵🇸" },
+  { code: "PA", name: "Panama", flag: "🇵🇦" },
+  { code: "PG", name: "Papua New Guinea", flag: "🇵🇬" },
+  { code: "PY", name: "Paraguay", flag: "🇵🇾" },
+  { code: "PE", name: "Peru", flag: "🇵🇪" },
+  { code: "PH", name: "Philippines", flag: "🇵🇭" },
+  { code: "PL", name: "Poland", flag: "🇵🇱" },
+  { code: "PT", name: "Portugal", flag: "🇵🇹" },
+  { code: "QA", name: "Qatar", flag: "🇶🇦" },
+  { code: "RO", name: "Romania", flag: "🇷🇴" },
+  { code: "RU", name: "Russia", flag: "🇷🇺" },
+  { code: "RW", name: "Rwanda", flag: "🇷🇼" },
+  { code: "KN", name: "Saint Kitts and Nevis", flag: "🇰🇳" },
+  { code: "LC", name: "Saint Lucia", flag: "🇱🇨" },
+  { code: "VC", name: "Saint Vincent and the Grenadines", flag: "🇻🇨" },
+  { code: "WS", name: "Samoa", flag: "🇼🇸" },
+  { code: "SM", name: "San Marino", flag: "🇸🇲" },
+  { code: "ST", name: "Sao Tome and Principe", flag: "🇸🇹" },
+  { code: "SA", name: "Saudi Arabia", flag: "🇸🇦" },
+  { code: "SN", name: "Senegal", flag: "🇸🇳" },
+  { code: "RS", name: "Serbia", flag: "🇷🇸" },
+  { code: "SC", name: "Seychelles", flag: "🇸🇨" },
+  { code: "SL", name: "Sierra Leone", flag: "🇸🇱" },
+  { code: "SG", name: "Singapore", flag: "🇸🇬" },
+  { code: "SK", name: "Slovakia", flag: "🇸🇰" },
+  { code: "SI", name: "Slovenia", flag: "🇸🇮" },
+  { code: "SB", name: "Solomon Islands", flag: "🇸🇧" },
+  { code: "SO", name: "Somalia", flag: "🇸🇴" },
+  { code: "ZA", name: "South Africa", flag: "🇿🇦" },
+  { code: "KR", name: "South Korea", flag: "🇰🇷" },
+  { code: "SS", name: "South Sudan", flag: "🇸🇸" },
+  { code: "ES", name: "Spain", flag: "🇪🇸" },
+  { code: "LK", name: "Sri Lanka", flag: "🇱🇰" },
+  { code: "SD", name: "Sudan", flag: "🇸🇩" },
+  { code: "SR", name: "Suriname", flag: "🇸🇷" },
+  { code: "SE", name: "Sweden", flag: "🇸🇪" },
+  { code: "CH", name: "Switzerland", flag: "🇨🇭" },
+  { code: "SY", name: "Syria", flag: "🇸🇾" },
+  { code: "TW", name: "Taiwan", flag: "🇹🇼" },
+  { code: "TJ", name: "Tajikistan", flag: "🇹🇯" },
+  { code: "TZ", name: "Tanzania", flag: "🇹🇿" },
+  { code: "TH", name: "Thailand", flag: "🇹🇭" },
+  { code: "TL", name: "Timor-Leste", flag: "🇹🇱" },
+  { code: "TG", name: "Togo", flag: "🇹🇬" },
+  { code: "TO", name: "Tonga", flag: "🇹🇴" },
+  { code: "TT", name: "Trinidad and Tobago", flag: "🇹🇹" },
+  { code: "TN", name: "Tunisia", flag: "🇹🇳" },
+  { code: "TR", name: "Turkey", flag: "🇹🇷" },
+  { code: "TM", name: "Turkmenistan", flag: "🇹🇲" },
+  { code: "TV", name: "Tuvalu", flag: "🇹🇻" },
+  { code: "UG", name: "Uganda", flag: "🇺🇬" },
+  { code: "UA", name: "Ukraine", flag: "🇺🇦" },
+  { code: "AE", name: "United Arab Emirates", flag: "🇦🇪" },
+  { code: "GB", name: "United Kingdom", flag: "🇬🇧" },
+  { code: "US", name: "United States", flag: "🇺🇸" },
+  { code: "UY", name: "Uruguay", flag: "🇺🇾" },
+  { code: "UZ", name: "Uzbekistan", flag: "🇺🇿" },
+  { code: "VU", name: "Vanuatu", flag: "🇻🇺" },
+  { code: "VA", name: "Vatican City", flag: "🇻🇦" },
+  { code: "VE", name: "Venezuela", flag: "🇻🇪" },
+  { code: "VN", name: "Vietnam", flag: "🇻🇳" },
+  { code: "YE", name: "Yemen", flag: "🇾🇪" },
+  { code: "ZM", name: "Zambia", flag: "🇿🇲" },
+  { code: "ZW", name: "Zimbabwe", flag: "🇿🇼" }
+]
 
 export default function RegisterStep3Screen({ navigation, route }) {
   const { email, password, registrationMethod, userId, token, user, fromGoogle } = route.params
@@ -22,40 +222,27 @@ export default function RegisterStep3Screen({ navigation, route }) {
   const [lastName, setLastName] = useState("")
   const [age, setAge] = useState("")
   const [selectedCountry, setSelectedCountry] = useState(null)
-  const [selectedCity, setSelectedCity] = useState(null)
   const [gender, setGender] = useState(null)
-  const [cities, setCities] = useState([])
   const [errors, setErrors] = useState({})
+  const [loading, setLoading] = useState(false)
   
   // Modals state
   const [countryModalVisible, setCountryModalVisible] = useState(false)
-  const [cityModalVisible, setCityModalVisible] = useState(false)
   const [genderModalVisible, setGenderModalVisible] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
 
   const genderOptions = [
-    { label: "Male", value: "male", icon: "♂" },
-    { label: "Female", value: "female", icon: "♀" },
+    { label: "Male", value: "M", icon: "♂" },
+    { label: "Female", value: "F", icon: "♀" },
     { label: "Other", value: "other", icon: "⚧" },
     { label: "Prefer not to say", value: "not_specified", icon: "•" },
   ]
 
   const handleCountrySelect = (country) => {
     setSelectedCountry(country)
-    setSelectedCity(null)
-    setErrors({ ...errors, country: null, city: null })
+    setErrors({ ...errors, country: null })
     setCountryModalVisible(false)
     setSearchQuery("")
-    
-    const countryCities = getCitiesByCountryCode(country.code)
-    setCities(countryCities || [])
-  }
-
-  const handleCitySelect = (city) => {
-    setSelectedCity(city)
-    setCityModalVisible(false)
-    setSearchQuery("")
-    if (errors.city) setErrors({ ...errors, city: null })
   }
 
   const handleGenderSelect = (genderOption) => {
@@ -64,12 +251,8 @@ export default function RegisterStep3Screen({ navigation, route }) {
     if (errors.gender) setErrors({ ...errors, gender: null })
   }
 
-  const filteredCountries = countriesData.filter(country =>
+  const filteredCountries = allCountries.filter(country =>
     country.name.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-
-  const filteredCities = cities.filter(city =>
-    city.toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const validateForm = () => {
@@ -83,86 +266,101 @@ export default function RegisterStep3Screen({ navigation, route }) {
       newErrors.age = "Please enter a valid age (13-120)"
     }
     if (!selectedCountry) newErrors.country = "Please select a country"
-    if (!selectedCity && cities.length > 0) newErrors.city = "Please select a city"
     if (!gender) newErrors.gender = "Please select a gender"
 
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
-  const handleContinue = () => {
-    if (validateForm()) {
-      navigation.navigate("RegisterStep4", {
-        email,
-        password,
-        registrationMethod,
+  const handleContinue = async () => {
+    if (!validateForm()) {
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      // Récupérer le token depuis AsyncStorage ou utiliser celui passé en paramètre
+      const authToken = token || await AsyncStorage.getItem('token')
+      
+      if (!authToken) {
+        Alert.alert('Error', 'Authentication token not found. Please login again.')
+        navigation.navigate('Login')
+        return
+      }
+
+      const profileData = {
+        registrationMethod: registrationMethod || 'email',
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        age,
+        age: parseInt(age),
         country: selectedCountry.code,
-        city: selectedCity,
         gender: gender.value,
-        userId,
-        token,
-        user,
-        fromGoogle
+      }
+
+      console.log('📤 Sending profile data:', profileData)
+      console.log('🔑 Using token:', authToken.substring(0, 20) + '...')
+
+      const response = await fetch(`${API_BASE_URL}/api/auth/complete-profile`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`,
+        },
+        body: JSON.stringify(profileData),
       })
+
+      const data = await response.json()
+      console.log('📥 Response:', data)
+
+      if (response.ok && data.success) {
+        // Sauvegarder les données utilisateur mises à jour
+        if (data.data) {
+          await AsyncStorage.setItem('user', JSON.stringify(data.data))
+        }
+
+        Alert.alert(
+          'Success',
+          'Profile completed successfully!',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                // Navigation vers l'écran suivant (RegisterStep4)
+                navigation.navigate("RegisterStep4", {
+                  email,
+                  password,
+                  registrationMethod,
+                  firstName: firstName.trim(),
+                  lastName: lastName.trim(),
+                  age,
+                  country: selectedCountry.code,
+                  gender: gender.value,
+                  userId,
+                  token: authToken,
+                  user: data.data,
+                  fromGoogle
+                })
+              }
+            }
+          ]
+        )
+      } else {
+        Alert.alert(
+          'Error',
+          data.message || 'Failed to complete profile. Please try again.'
+        )
+      }
+    } catch (error) {
+      console.error('❌ Error completing profile:', error)
+      Alert.alert(
+        'Error',
+        'Network error. Please check your connection and try again.'
+      )
+    } finally {
+      setLoading(false)
     }
   }
-
-  const renderSelectionModal = (visible, onClose, title, data, onSelect, renderItem, noDataText) => (
-    <Modal
-      animationType="slide"
-      transparent={true}
-      visible={visible}
-      onRequestClose={onClose}
-    >
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === "ios" ? "padding" : "height"} 
-        style={styles.modalOverlay}
-      >
-        <TouchableOpacity 
-          style={styles.modalBackdrop} 
-          activeOpacity={1} 
-          onPress={onClose}
-        />
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>{title}</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeButtonText}>✕</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.searchContainer}>
-            <Text style={styles.searchIcon}>🔍</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder={`Search ${title.toLowerCase()}...`}
-              placeholderTextColor="#999"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-
-          {data.length > 0 ? (
-            <FlatList
-              data={data}
-              keyExtractor={(item, index) => `${item}-${index}`}
-              renderItem={renderItem}
-              showsVerticalScrollIndicator={true}
-              keyboardShouldPersistTaps="handled"
-              style={styles.listContainer}
-            />
-          ) : (
-            <View style={styles.noDataContainer}>
-              <Text style={styles.noDataText}>{noDataText}</Text>
-            </View>
-          )}
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  )
 
   return (
     <LinearGradient colors={["#7B2CBF", "#C77DFF", "#E0AAFF"]} style={styles.container}>
@@ -172,7 +370,7 @@ export default function RegisterStep3Screen({ navigation, route }) {
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} disabled={loading}>
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
 
@@ -197,6 +395,7 @@ export default function RegisterStep3Screen({ navigation, route }) {
                     if (errors.firstName) setErrors({ ...errors, firstName: null })
                   }}
                   autoCapitalize="words"
+                  editable={!loading}
                 />
                 {errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
               </View>
@@ -212,6 +411,7 @@ export default function RegisterStep3Screen({ navigation, route }) {
                     if (errors.lastName) setErrors({ ...errors, lastName: null })
                   }}
                   autoCapitalize="words"
+                  editable={!loading}
                 />
                 {errors.lastName && <Text style={styles.errorText}>{errors.lastName}</Text>}
               </View>
@@ -228,6 +428,7 @@ export default function RegisterStep3Screen({ navigation, route }) {
                   }}
                   keyboardType="number-pad"
                   maxLength={3}
+                  editable={!loading}
                 />
                 {errors.age && <Text style={styles.errorText}>{errors.age}</Text>}
               </View>
@@ -238,6 +439,7 @@ export default function RegisterStep3Screen({ navigation, route }) {
                   style={[styles.selector, errors.gender && styles.inputError]}
                   onPress={() => setGenderModalVisible(true)}
                   activeOpacity={0.7}
+                  disabled={loading}
                 >
                   <Text style={[styles.selectorText, !gender && styles.placeholderText]}>
                     {gender ? `${gender.icon} ${gender.label}` : "Select Gender *"}
@@ -248,7 +450,7 @@ export default function RegisterStep3Screen({ navigation, route }) {
               </View>
             </View>
 
-            {/* Location */}
+            {/* Location - Country Only */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Location</Text>
               
@@ -257,6 +459,7 @@ export default function RegisterStep3Screen({ navigation, route }) {
                   style={[styles.selector, errors.country && styles.inputError]}
                   onPress={() => setCountryModalVisible(true)}
                   activeOpacity={0.7}
+                  disabled={loading}
                 >
                   <Text style={[styles.selectorText, !selectedCountry && styles.placeholderText]}>
                     {selectedCountry ? `${selectedCountry.flag} ${selectedCountry.name}` : "Select Country *"}
@@ -265,96 +468,111 @@ export default function RegisterStep3Screen({ navigation, route }) {
                 </TouchableOpacity>
                 {errors.country && <Text style={styles.errorText}>{errors.country}</Text>}
               </View>
-
-              <View style={styles.inputWrapper}>
-                <TouchableOpacity
-                  style={[
-                    styles.selector,
-                    errors.city && styles.inputError,
-                    !selectedCountry && styles.selectorDisabled
-                  ]}
-                  onPress={() => selectedCountry && setCityModalVisible(true)}
-                  activeOpacity={0.7}
-                  disabled={!selectedCountry}
-                >
-                  <Text style={[styles.selectorText, !selectedCity && styles.placeholderText]}>
-                    {selectedCity || (selectedCountry ? "Select City *" : "Select a country first")}
-                  </Text>
-                  <Text style={styles.selectorArrow}>›</Text>
-                </TouchableOpacity>
-                {errors.city && <Text style={styles.errorText}>{errors.city}</Text>}
-                {cities.length > 0 && (
-                  <Text style={styles.helperText}>{cities.length} cities available</Text>
-                )}
-              </View>
             </View>
           </View>
 
           <Text style={styles.requiredNote}>* Required fields</Text>
 
-          <TouchableOpacity style={styles.button} onPress={handleContinue} activeOpacity={0.8}>
+          <TouchableOpacity 
+            style={[styles.button, loading && styles.buttonDisabled]} 
+            onPress={handleContinue} 
+            activeOpacity={0.8}
+            disabled={loading}
+          >
             <LinearGradient
-              colors={["#FF6B9D", "#FFA07A"]}
+              colors={loading ? ["#CCC", "#999"] : ["#FF6B9D", "#FFA07A"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
               style={styles.buttonGradient}
             >
-              <Text style={styles.buttonText}>Continue →</Text>
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator color="white" size="small" />
+                  <Text style={styles.buttonText}>  Processing...</Text>
+                </View>
+              ) : (
+                <Text style={styles.buttonText}>Continue →</Text>
+              )}
             </LinearGradient>
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
 
       {/* Country Modal */}
-      {renderSelectionModal(
-        countryModalVisible,
-        () => {
+      <Modal
+        animationType="slide"
+        transparent={true}
+        visible={countryModalVisible}
+        onRequestClose={() => {
           setCountryModalVisible(false)
           setSearchQuery("")
-        },
-        "Select Country",
-        filteredCountries,
-        handleCountrySelect,
-        ({ item }) => (
-          <TouchableOpacity
-            style={styles.listItem}
-            onPress={() => handleCountrySelect(item)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.listItemFlag}>{item.flag}</Text>
-            <Text style={styles.listItemText}>{item.name}</Text>
-            {selectedCountry?.code === item.code && (
-              <Text style={styles.checkmark}>✓</Text>
-            )}
-          </TouchableOpacity>
-        ),
-        "No countries found"
-      )}
+        }}
+      >
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === "ios" ? "padding" : "height"} 
+          style={styles.modalOverlay}
+        >
+          <TouchableOpacity 
+            style={styles.modalBackdrop} 
+            activeOpacity={1} 
+            onPress={() => {
+              setCountryModalVisible(false)
+              setSearchQuery("")
+            }}
+          />
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Country</Text>
+              <TouchableOpacity 
+                onPress={() => {
+                  setCountryModalVisible(false)
+                  setSearchQuery("")
+                }} 
+                style={styles.closeButton}
+              >
+                <Text style={styles.closeButtonText}>✕</Text>
+              </TouchableOpacity>
+            </View>
 
-      {/* City Modal */}
-      {renderSelectionModal(
-        cityModalVisible,
-        () => {
-          setCityModalVisible(false)
-          setSearchQuery("")
-        },
-        "Select City",
-        filteredCities,
-        handleCitySelect,
-        ({ item }) => (
-          <TouchableOpacity
-            style={styles.listItem}
-            onPress={() => handleCitySelect(item)}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.listItemText}>{item}</Text>
-            {selectedCity === item && (
-              <Text style={styles.checkmark}>✓</Text>
-            )}
-          </TouchableOpacity>
-        ),
-        "No cities found"
-      )}
+            <View style={styles.searchContainer}>
+              <Text style={styles.searchIcon}>🔍</Text>
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search country..."
+                placeholderTextColor="#999"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
+
+            <FlatList
+              data={filteredCountries}
+              keyExtractor={(item) => item.code}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={styles.listItem}
+                  onPress={() => handleCountrySelect(item)}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.listItemFlag}>{item.flag}</Text>
+                  <Text style={styles.listItemText}>{item.name}</Text>
+                  {selectedCountry?.code === item.code && (
+                    <Text style={styles.checkmark}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              )}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ flexGrow: 1 }}
+              ListEmptyComponent={() => (
+                <View style={styles.noDataContainer}>
+                  <Text style={styles.noDataText}>No countries found</Text>
+                </View>
+              )}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       {/* Gender Modal */}
       <Modal
@@ -499,10 +717,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "transparent",
   },
-  selectorDisabled: {
-    backgroundColor: "#F0F0F0",
-    opacity: 0.6,
-  },
   selectorText: {
     fontSize: 16,
     color: "#333",
@@ -523,13 +737,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     fontWeight: "500",
   },
-  helperText: {
-    color: "#7B2CBF",
-    fontSize: 12,
-    marginTop: 6,
-    marginLeft: 4,
-    fontStyle: "italic",
-  },
   requiredNote: {
     color: "rgba(255, 255, 255, 0.9)",
     fontSize: 13,
@@ -546,6 +753,9 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
+  buttonDisabled: {
+    opacity: 0.7,
+  },
   buttonGradient: {
     paddingVertical: 18,
     alignItems: "center",
@@ -556,11 +766,18 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     letterSpacing: 0.5,
   },
-  // Modal Styles
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "flex-end",
+  },
+  modalBackdrop: {
+    flex: 1,
   },
   modalContent: {
     backgroundColor: "white",
@@ -615,9 +832,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#333",
   },
-  listContainer: {
-    flex: 1,
-  },
   listItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -650,7 +864,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#999",
   },
-  // Gender Modal Styles
   genderContainer: {
     padding: 24,
   },
