@@ -2,32 +2,65 @@
   "expo": {
     "name": "Syni",
     "slug": "Syni",
+    "scheme": "com.mustapha01.syni",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.backendapp.mobile"
+      "bundleIdentifier": "com.mustapha01.syni",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.mustapha01.syni",
+              "com.googleusercontent.apps.576392076825-pmfl6u4bte3ckj0su0m9dgtogb6sj5pf"
+            ]
+          }
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "package": "com.mustapha01.syni",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "com.mustapha01.syni"
+            }
+          ],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      "@react-native-community/datetimepicker",
+      "expo-build-properties"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "6022dc19-a379-46d6-9d33-4e00342498ce"
+      }
+    },
+    "owner": "mustapha01"
   }
 }

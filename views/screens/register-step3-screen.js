@@ -1,26 +1,95 @@
-"use client"
-
-import { useState } from "react"
+import { useState, useRef, useEffect } from "react"
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-  Modal,
-  FlatList,
-  Alert,
-  ActivityIndicator,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  ScrollView, KeyboardAvoidingView, Platform, Modal,
+  FlatList, Alert, ActivityIndicator, Animated, StatusBar, Dimensions,
 } from "react-native"
-import { LinearGradient } from "expo-linear-gradient"
-import AsyncStorage from '@react-native-async-storage/async-storage'
+import { Ionicons } from "@expo/vector-icons"
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import DateTimePicker from "@react-native-community/datetimepicker"
 
+const { width } = Dimensions.get("window")
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL
 
-// Liste complète des pays
+// ─────────────────────────────────────────────────────────────
+//  DESIGN TOKENS
+// ─────────────────────────────────────────────────────────────
+const C = {
+  void:       "#07011A",
+  cosmos:     "#110330",
+  nebula:     "#1E0A4A",
+  aurora:     "#8B5CF6",
+  gold:       "#F4C842",
+  goldSoft:   "#FDE68A",
+  rose:       "#F472B6",
+  white:      "#FFFFFF",
+  dim:        "rgba(255,255,255,0.55)",
+  faint:      "rgba(255,255,255,0.15)",
+  glass:      "rgba(255,255,255,0.07)",
+  cardBg:     "rgba(17,3,48,0.95)",
+  inputBg:    "rgba(255,255,255,0.08)",
+  inputBorder:"rgba(255,255,255,0.18)",
+  borderGold: "rgba(244,200,66,0.22)",
+  error:      "#FF6B6B",
+  // Modal (light surface — keeps original UX feel for pickers)
+  modalBg:    "#FFFFFF",
+  modalText:  "#1A1A2E",
+  modalSub:   "#5B21B6",
+  modalLine:  "#F0F0F0",
+  modalPH:    "#999999",
+}
+
+// ─────────────────────────────────────────────────────────────
+//  STAR FIELD
+// ─────────────────────────────────────────────────────────────
+const STARS = Array.from({ length: 50 }, (_, i) => ({
+  id: i,
+  x: Math.random() * 100,
+  y: Math.random() * 100,
+  r: Math.random() * 1.6 + 0.3,
+  o: Math.random() * 0.45 + 0.1,
+}))
+function StarField() {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {STARS.map(s => (
+        <View key={s.id} style={{
+          position: "absolute", left: `${s.x}%`, top: `${s.y}%`,
+          width: s.r * 2, height: s.r * 2, borderRadius: s.r,
+          backgroundColor: C.white, opacity: s.o,
+        }} />
+      ))}
+    </View>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
+//  GLASS INPUT WRAPPER
+// ─────────────────────────────────────────────────────────────
+function GlassInput({ icon, hasError, children, style, onPress }) {
+  const Wrap = onPress ? TouchableOpacity : View
+  return (
+    <Wrap onPress={onPress} activeOpacity={0.75} style={[gi.wrap, hasError && gi.wrapError, style]}>
+      {icon && <Ionicons name={icon} size={17} color={C.dim} style={gi.icon} />}
+      {children}
+    </Wrap>
+  )
+}
+const gi = StyleSheet.create({
+  wrap: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: C.inputBg,
+    borderWidth: 1, borderColor: C.inputBorder,
+    borderRadius: 14, paddingHorizontal: 14,
+    marginBottom: 12,
+  },
+  wrapError: { borderColor: C.error },
+  icon: { marginRight: 10 },
+})
+
+// ─────────────────────────────────────────────────────────────
+//  COUNTRY LIST (unchanged data)
+// ─────────────────────────────────────────────────────────────
 const allCountries = [
   { code: "AF", name: "Afghanistan", flag: "🇦🇫" },
   { code: "AL", name: "Albania", flag: "🇦🇱" },
@@ -213,360 +282,481 @@ const allCountries = [
   { code: "VN", name: "Vietnam", flag: "🇻🇳" },
   { code: "YE", name: "Yemen", flag: "🇾🇪" },
   { code: "ZM", name: "Zambia", flag: "🇿🇲" },
-  { code: "ZW", name: "Zimbabwe", flag: "🇿🇼" }
+  { code: "ZW", name: "Zimbabwe", flag: "🇿🇼" },
 ]
 
+const fetchCitiesForCountry = async (countryName) => {
+  const response = await fetch("https://countriesnow.space/api/v0.1/countries/cities", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ country: countryName }),
+  })
+  const json = await response.json()
+  if (json.error || !json.data) return []
+  return json.data.sort()
+}
+
+// ─────────────────────────────────────────────────────────────
+//  MAIN SCREEN
+// ─────────────────────────────────────────────────────────────
 export default function RegisterStep3Screen({ navigation, route }) {
   const { email, password, registrationMethod, userId, token, user, fromGoogle } = route.params
-  const [firstName, setFirstName] = useState("")
-  const [lastName, setLastName] = useState("")
-  const [age, setAge] = useState("")
+
+  const [firstName,     setFirstName]     = useState("")
+  const [lastName,      setLastName]      = useState("")
+  const [dateOfBirth,   setDateOfBirth]   = useState(null)
+  const [showDatePicker,setShowDatePicker]= useState(false)
+  const [timeOfBirth,   setTimeOfBirth]   = useState(new Date(0, 0, 0, 12, 0, 0))
+  const [showTimePicker,setShowTimePicker]= useState(false)
   const [selectedCountry, setSelectedCountry] = useState(null)
-  const [gender, setGender] = useState(null)
-  const [errors, setErrors] = useState({})
-  const [loading, setLoading] = useState(false)
-  
-  // Modals state
-  const [countryModalVisible, setCountryModalVisible] = useState(false)
+  const [gender,          setGender]          = useState(null)
+  const [errors,          setErrors]          = useState({})
+  const [loading,         setLoading]         = useState(false)
+
+  const [selectedCity,       setSelectedCity]       = useState(null)
+  const [cities,             setCities]             = useState([])
+  const [citiesLoading,      setCitiesLoading]      = useState(false)
+  const [citiesError,        setCitiesError]        = useState(null)
+  const [cityModalVisible,   setCityModalVisible]   = useState(false)
+  const [citySearchQuery,    setCitySearchQuery]    = useState("")
+  const [countryModalVisible,setCountryModalVisible]= useState(false)
   const [genderModalVisible, setGenderModalVisible] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
+  const [searchQuery,        setSearchQuery]        = useState("")
+
+  // Entrance animation
+  const fadeIn  = useRef(new Animated.Value(0)).current
+  const slideUp = useRef(new Animated.Value(30)).current
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeIn,  { toValue: 1, duration: 550, delay: 80, useNativeDriver: true }),
+      Animated.timing(slideUp, { toValue: 0, duration: 550, delay: 80, useNativeDriver: true }),
+    ]).start()
+  }, [])
 
   const genderOptions = [
-    { label: "Male", value: "M", icon: "♂" },
-    { label: "Female", value: "F", icon: "♀" },
-    { label: "Other", value: "other", icon: "⚧" },
-    { label: "Prefer not to say", value: "not_specified", icon: "•" },
+    { label: "Male",   value: "M",     icon: "♂" },
+    { label: "Female", value: "F",     icon: "♀" },
+
   ]
 
-  const handleCountrySelect = (country) => {
-    setSelectedCountry(country)
-    setErrors({ ...errors, country: null })
-    setCountryModalVisible(false)
-    setSearchQuery("")
+  const calculateAge = (d) => {
+    const today = new Date()
+    let age = today.getFullYear() - d.getFullYear()
+    const m = today.getMonth() - d.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--
+    return age
+  }
+  const formatDate = (d) => {
+    if (!d) return ""
+    return `${d.getDate().toString().padStart(2,"0")}/${(d.getMonth()+1).toString().padStart(2,"0")}/${d.getFullYear()}`
+  }
+  const formatTime = (t) => {
+    if (!t) return "12:00"
+    return `${t.getHours().toString().padStart(2,"0")}:${t.getMinutes().toString().padStart(2,"0")}`
+  }
+  const onDateChange = (event, selected) => {
+    setShowDatePicker(Platform.OS === "ios")
+    if (selected) { setDateOfBirth(selected); setErrors({ ...errors, dateOfBirth: null }) }
+  }
+  const onTimeChange = (event, selected) => {
+    setShowTimePicker(Platform.OS === "ios")
+    if (selected) { setTimeOfBirth(selected); setErrors({ ...errors, timeOfBirth: null }) }
   }
 
-  const handleGenderSelect = (genderOption) => {
-    setGender(genderOption)
-    setGenderModalVisible(false)
+  const handleCountrySelect = async (country) => {
+    setSelectedCountry(country)
+    setSelectedCity(null); setCities([]); setCitiesError(null)
+    setErrors({ ...errors, country: null, city: null })
+    setCountryModalVisible(false); setSearchQuery("")
+    setCitiesLoading(true)
+    try {
+      const list = await fetchCitiesForCountry(country.name)
+      if (list.length === 0) setCitiesError("No cities found for this country. You can skip this field.")
+      setCities(list)
+    } catch { setCitiesError("Could not load cities. Please check your connection.") }
+    finally { setCitiesLoading(false) }
+  }
+  const handleGenderSelect = (opt) => {
+    setGender(opt); setGenderModalVisible(false)
     if (errors.gender) setErrors({ ...errors, gender: null })
   }
+  const handleCitySelect = (cityName) => {
+    setSelectedCity(cityName); setCityModalVisible(false); setCitySearchQuery("")
+    if (errors.city) setErrors({ ...errors, city: null })
+  }
 
-  const filteredCountries = allCountries.filter(country =>
-    country.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredCountries = allCountries.filter(c =>
+    c.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
+  const filteredCities = cities.filter(c =>
+    c.toLowerCase().includes(citySearchQuery.toLowerCase())
   )
 
   const validateForm = () => {
-    const newErrors = {}
-    
-    if (!firstName.trim()) newErrors.firstName = "First name is required"
-    if (!lastName.trim()) newErrors.lastName = "Last name is required"
-    if (!age) {
-      newErrors.age = "Age is required"
-    } else if (parseInt(age) < 13 || parseInt(age) > 120) {
-      newErrors.age = "Please enter a valid age (13-120)"
+    const e = {}
+    if (!firstName.trim()) e.firstName = "First name is required"
+    if (!lastName.trim())  e.lastName  = "Last name is required"
+    if (!dateOfBirth) {
+      e.dateOfBirth = "Date of birth is required"
+    } else {
+      const age = calculateAge(dateOfBirth)
+      if (age < 18)          e.dateOfBirth = "You must be at least 18 years old"
+      else if (age > 120)    e.dateOfBirth = "Please enter a valid date of birth"
+      if (dateOfBirth > new Date()) e.dateOfBirth = "Date of birth cannot be in the future"
     }
-    if (!selectedCountry) newErrors.country = "Please select a country"
-    if (!gender) newErrors.gender = "Please select a gender"
-
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+    if (!selectedCountry) e.country = "Please select a country"
+    if (!gender)          e.gender  = "Please select a gender"
+    setErrors(e)
+    return Object.keys(e).length === 0
   }
 
   const handleContinue = async () => {
-    if (!validateForm()) {
-      return
-    }
-
+    if (!validateForm()) return
     setLoading(true)
-
     try {
-      // Récupérer le token depuis AsyncStorage ou utiliser celui passé en paramètre
-      const authToken = token || await AsyncStorage.getItem('token')
-      
+      const authToken = token || await AsyncStorage.getItem("token")
       if (!authToken) {
-        Alert.alert('Error', 'Authentication token not found. Please login again.')
-        navigation.navigate('Login')
-        return
+        Alert.alert("Error", "Authentication token not found. Please login again.")
+        navigation.navigate("Login"); return
       }
-
+      const combined = new Date(
+        dateOfBirth.getFullYear(), dateOfBirth.getMonth(), dateOfBirth.getDate(),
+        timeOfBirth.getHours(), timeOfBirth.getMinutes(), timeOfBirth.getSeconds(), 0
+      )
       const profileData = {
-        registrationMethod: registrationMethod || 'email',
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        age: parseInt(age),
+        registrationMethod: registrationMethod || "email",
+        firstName: firstName.trim(), lastName: lastName.trim(),
+        dateOfBirth: combined.toISOString(),
         country: selectedCountry.code,
+        city: selectedCity || null,
         gender: gender.value,
       }
-
-      console.log('📤 Sending profile data:', profileData)
-      console.log('🔑 Using token:', authToken.substring(0, 20) + '...')
-
       const response = await fetch(`${API_BASE_URL}/api/auth/complete-profile`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`,
-        },
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${authToken}` },
         body: JSON.stringify(profileData),
       })
-
       const data = await response.json()
-      console.log('📥 Response:', data)
-
       if (response.ok && data.success) {
-        // Sauvegarder les données utilisateur mises à jour
-        if (data.data) {
-          await AsyncStorage.setItem('user', JSON.stringify(data.data))
-        }
-
-        Alert.alert(
-          'Success',
-          'Profile completed successfully!',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Navigation vers l'écran suivant (RegisterStep4)
-                navigation.navigate("RegisterStep4", {
-                  email,
-                  password,
-                  registrationMethod,
-                  firstName: firstName.trim(),
-                  lastName: lastName.trim(),
-                  age,
-                  country: selectedCountry.code,
-                  gender: gender.value,
-                  userId,
-                  token: authToken,
-                  user: data.data,
-                  fromGoogle
-                })
-              }
-            }
-          ]
-        )
+        if (data.data) await AsyncStorage.setItem("user", JSON.stringify(data.data))
+        Alert.alert("Success", "Profile completed successfully!", [{
+          text: "OK",
+          onPress: () => navigation.navigate("RegisterStep4SocialLinks", {
+            email, password, registrationMethod,
+            firstName: firstName.trim(), lastName: lastName.trim(),
+            dateOfBirth: combined.toISOString(),
+            country: selectedCountry.code, city: selectedCity || null, gender: gender.value,
+            userId, token: authToken, user: data.data, fromGoogle,
+          }),
+        }])
       } else {
-        Alert.alert(
-          'Error',
-          data.message || 'Failed to complete profile. Please try again.'
-        )
+        Alert.alert("Error", data.message || "Failed to complete profile. Please try again.")
       }
-    } catch (error) {
-      console.error('❌ Error completing profile:', error)
-      Alert.alert(
-        'Error',
-        'Network error. Please check your connection and try again.'
-      )
+    } catch {
+      Alert.alert("Error", "Network error. Please check your connection and try again.")
     } finally {
       setLoading(false)
     }
   }
 
+  const maxDate = new Date()
+  const minDate = new Date(); minDate.setFullYear(minDate.getFullYear() - 120)
+  const defaultDate = dateOfBirth || new Date(new Date().getFullYear() - 25, new Date().getMonth(), new Date().getDate())
+
+  // ─────────────────────────────────────────────
+  //  RENDER
+  // ─────────────────────────────────────────────
   return (
-    <LinearGradient colors={["#7B2CBF", "#C77DFF", "#E0AAFF"]} style={styles.container}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardView}>
+    <View style={s.container}>
+      <StatusBar barStyle="light-content" backgroundColor={C.void} />
+      <StarField />
+      <View style={s.blobTop} />
+      <View style={s.blobRight} />
+
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()} disabled={loading}>
-            <Text style={styles.backButtonText}>←</Text>
+          {/* Back */}
+          <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()} disabled={loading}>
+            <View style={s.backBtnInner}>
+              <Ionicons name="arrow-back" size={20} color={C.white} />
+            </View>
           </TouchableOpacity>
 
-          <View style={styles.headerSection}>
-            <Text style={styles.title}>Tell us about yourself</Text>
-            <Text style={styles.subtitle}>Help us personalize your experience</Text>
-          </View>
+          {/* Header */}
+          <Animated.View style={[s.header, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
+            <Text style={s.eyebrow}>YOUR COSMIC PROFILE</Text>
+            <Text style={s.title}>Tell us about{"\n"}yourself</Text>
+            <Text style={s.subtitle}>Help us personalize your experience</Text>
+          </Animated.View>
 
-          <View style={styles.formContainer}>
-            {/* Personal Information */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Personal Information</Text>
-              
-              <View style={styles.inputWrapper}>
+          {/* ── FORM CARD ── */}
+          <Animated.View style={[s.card, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
+
+            {/* ── Section: Personal ── */}
+            <View style={s.section}>
+              <View style={s.sectionHeader}>
+                <View style={s.sectionDot} />
+                <Text style={s.sectionTitle}>Personal Information</Text>
+              </View>
+
+              {/* First name */}
+              <GlassInput icon="person-outline" hasError={!!errors.firstName}>
                 <TextInput
-                  style={[styles.input, errors.firstName && styles.inputError]}
+                  style={s.inputText}
                   placeholder="First Name *"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={C.dim}
                   value={firstName}
-                  onChangeText={(text) => {
-                    setFirstName(text)
-                    if (errors.firstName) setErrors({ ...errors, firstName: null })
-                  }}
+                  onChangeText={t => { setFirstName(t); if (errors.firstName) setErrors({ ...errors, firstName: null }) }}
                   autoCapitalize="words"
                   editable={!loading}
                 />
-                {errors.firstName && <Text style={styles.errorText}>{errors.firstName}</Text>}
-              </View>
+              </GlassInput>
+              {errors.firstName && <Text style={s.errorText}>{errors.firstName}</Text>}
 
-              <View style={styles.inputWrapper}>
+              {/* Last name */}
+              <GlassInput icon="person-outline" hasError={!!errors.lastName}>
                 <TextInput
-                  style={[styles.input, errors.lastName && styles.inputError]}
+                  style={s.inputText}
                   placeholder="Last Name *"
-                  placeholderTextColor="#999"
+                  placeholderTextColor={C.dim}
                   value={lastName}
-                  onChangeText={(text) => {
-                    setLastName(text)
-                    if (errors.lastName) setErrors({ ...errors, lastName: null })
-                  }}
+                  onChangeText={t => { setLastName(t); if (errors.lastName) setErrors({ ...errors, lastName: null }) }}
                   autoCapitalize="words"
                   editable={!loading}
                 />
-                {errors.lastName && <Text style={styles.errorText}>{errors.lastName}</Text>}
-              </View>
+              </GlassInput>
+              {errors.lastName && <Text style={s.errorText}>{errors.lastName}</Text>}
 
-              <View style={styles.inputWrapper}>
-                <TextInput
-                  style={[styles.input, errors.age && styles.inputError]}
-                  placeholder="Age *"
-                  placeholderTextColor="#999"
-                  value={age}
-                  onChangeText={(text) => {
-                    setAge(text)
-                    if (errors.age) setErrors({ ...errors, age: null })
-                  }}
-                  keyboardType="number-pad"
-                  maxLength={3}
-                  editable={!loading}
+              {/* Date of birth */}
+              <GlassInput
+                icon="calendar-outline" 
+                hasError={!!errors.dateOfBirth}
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={[s.inputText, { flex: 1 }, !dateOfBirth && s.dimText]}>
+                  {dateOfBirth ? formatDate(dateOfBirth) : "Date of Birth *"}
+                </Text>
+                {dateOfBirth && (
+                  <View style={s.agePill}>
+                    <Text style={s.agePillText}>{calculateAge(dateOfBirth)} yrs</Text>
+                  </View>
+                )}
+              </GlassInput>
+              {errors.dateOfBirth && <Text style={s.errorText}>{errors.dateOfBirth}</Text>}
+
+              {showDatePicker && (
+                <DateTimePicker
+                  value={defaultDate} mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={onDateChange} maximumDate={maxDate} minimumDate={minDate} locale="en-US"
                 />
-                {errors.age && <Text style={styles.errorText}>{errors.age}</Text>}
-              </View>
+              )}
 
-              {/* Gender Selector */}
-              <View style={styles.inputWrapper}>
-                <TouchableOpacity
-                  style={[styles.selector, errors.gender && styles.inputError]}
-                  onPress={() => setGenderModalVisible(true)}
-                  activeOpacity={0.7}
-                  disabled={loading}
-                >
-                  <Text style={[styles.selectorText, !gender && styles.placeholderText]}>
-                    {gender ? `${gender.icon} ${gender.label}` : "Select Gender *"}
-                  </Text>
-                  <Text style={styles.selectorArrow}>›</Text>
-                </TouchableOpacity>
-                {errors.gender && <Text style={styles.errorText}>{errors.gender}</Text>}
-              </View>
+              {/* Time of birth */}
+              <GlassInput icon="time-outline" onPress={() => setShowTimePicker(true)}>
+                <Text style={[s.inputText, { flex: 1 }]}>
+                  Birth Time: {formatTime(timeOfBirth)}
+                </Text>
+                <Text style={s.optionalTag}>optional</Text>
+              </GlassInput>
+
+              {showTimePicker && (
+                <DateTimePicker
+                  value={timeOfBirth} mode="time" is24Hour
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  onChange={onTimeChange}
+                />
+              )}
+
+              {/* Gender */}
+              <GlassInput
+                icon="transgender-outline"
+                hasError={!!errors.gender}
+                onPress={() => setGenderModalVisible(true)}
+              >
+                <Text style={[s.inputText, { flex: 1 }, !gender && s.dimText]}>
+                  {gender ? `${gender.icon}  ${gender.label}` : "Select Gender *"}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={C.dim} />
+              </GlassInput>
+              {errors.gender && <Text style={s.errorText}>{errors.gender}</Text>}
             </View>
 
-            {/* Location - Country Only */}
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Location</Text>
-              
-              <View style={styles.inputWrapper}>
-                <TouchableOpacity
-                  style={[styles.selector, errors.country && styles.inputError]}
-                  onPress={() => setCountryModalVisible(true)}
-                  activeOpacity={0.7}
-                  disabled={loading}
-                >
-                  <Text style={[styles.selectorText, !selectedCountry && styles.placeholderText]}>
-                    {selectedCountry ? `${selectedCountry.flag} ${selectedCountry.name}` : "Select Country *"}
-                  </Text>
-                  <Text style={styles.selectorArrow}>›</Text>
-                </TouchableOpacity>
-                {errors.country && <Text style={styles.errorText}>{errors.country}</Text>}
+            {/* ── Section: Location ── */}
+            <View style={s.section}>
+              <View style={s.sectionHeader}>
+                <View style={[s.sectionDot, { backgroundColor: C.rose }]} />
+                <Text style={s.sectionTitle}>Location</Text>
               </View>
+
+              {/* Country */}
+              <GlassInput
+                icon="earth-outline"
+                hasError={!!errors.country}
+                onPress={() => setCountryModalVisible(true)}
+              >
+                <Text style={[s.inputText, { flex: 1 }, !selectedCountry && s.dimText]}>
+                  {selectedCountry ? `${selectedCountry.flag}  ${selectedCountry.name}` : "Select Country *"}
+                </Text>
+                <Ionicons name="chevron-forward" size={16} color={C.dim} />
+              </GlassInput>
+              {errors.country && <Text style={s.errorText}>{errors.country}</Text>}
+
+              {/* City */}
+              {selectedCountry && (
+                citiesLoading ? (
+                  <GlassInput icon="location-outline">
+                    <ActivityIndicator size="small" color={C.aurora} style={{ marginRight: 10 }} />
+                    <Text style={[s.inputText, s.dimText]}>Loading cities…</Text>
+                  </GlassInput>
+                ) : citiesError && cities.length === 0 ? (
+                  <>
+                    <GlassInput icon="location-outline" hasError={!!errors.city}>
+                      <TextInput
+                        style={[s.inputText, { flex: 1 }]}
+                        placeholder="City (optional)"
+                        placeholderTextColor={C.dim}
+                        value={selectedCity || ""}
+                        onChangeText={t => { setSelectedCity(t || null); if (errors.city) setErrors({ ...errors, city: null }) }}
+                        editable={!loading}
+                      />
+                    </GlassInput>
+                    <Text style={s.helperText}>⚠️ {citiesError}</Text>
+                  </>
+                ) : (
+                  <GlassInput
+                    icon="location-outline"
+                    hasError={!!errors.city}
+                    onPress={() => cities.length > 0 && setCityModalVisible(true)}
+                  >
+                    <Text style={[s.inputText, { flex: 1 }, !selectedCity && s.dimText]}>
+                      {selectedCity || "Select City (optional)"}
+                    </Text>
+                    <Ionicons name="chevron-forward" size={16} color={C.dim} />
+                  </GlassInput>
+                )
+              )}
+              {errors.city && <Text style={s.errorText}>{errors.city}</Text>}
             </View>
-          </View>
 
-          <Text style={styles.requiredNote}>* Required fields</Text>
+          </Animated.View>
 
-          <TouchableOpacity 
-            style={[styles.button, loading && styles.buttonDisabled]} 
-            onPress={handleContinue} 
-            activeOpacity={0.8}
+          <Text style={s.requiredNote}>* Required fields</Text>
+
+          {/* Continue button */}
+          <TouchableOpacity
+            style={[s.continueBtn, loading && s.continueBtnDisabled]}
+            onPress={handleContinue}
+            activeOpacity={0.85}
             disabled={loading}
           >
-            <LinearGradient
-              colors={loading ? ["#CCC", "#999"] : ["#FF6B9D", "#FFA07A"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.buttonGradient}
-            >
+            <View style={s.continueBtnInner}>
               {loading ? (
-                <View style={styles.loadingContainer}>
-                  <ActivityIndicator color="white" size="small" />
-                  <Text style={styles.buttonText}>  Processing...</Text>
+                <View style={s.loadingRow}>
+                  <ActivityIndicator color={C.gold} size="small" />
+                  <Text style={s.continueBtnText}>  Processing…</Text>
                 </View>
               ) : (
-                <Text style={styles.buttonText}>Continue →</Text>
+                <Text style={s.continueBtnText}>Continue  →</Text>
               )}
-            </LinearGradient>
+            </View>
           </TouchableOpacity>
+
         </ScrollView>
       </KeyboardAvoidingView>
 
-      {/* Country Modal */}
+      {/* ── COUNTRY MODAL ── */}
       <Modal
-        animationType="slide"
-        transparent={true}
+        animationType="slide" transparent
         visible={countryModalVisible}
-        onRequestClose={() => {
-          setCountryModalVisible(false)
-          setSearchQuery("")
-        }}
+        onRequestClose={() => { setCountryModalVisible(false); setSearchQuery("") }}
       >
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === "ios" ? "padding" : "height"} 
-          style={styles.modalOverlay}
-        >
-          <TouchableOpacity 
-            style={styles.modalBackdrop} 
-            activeOpacity={1} 
-            onPress={() => {
-              setCountryModalVisible(false)
-              setSearchQuery("")
-            }}
-          />
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Country</Text>
-              <TouchableOpacity 
-                onPress={() => {
-                  setCountryModalVisible(false)
-                  setSearchQuery("")
-                }} 
-                style={styles.closeButton}
-              >
-                <Text style={styles.closeButtonText}>✕</Text>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={m.overlay}>
+          <TouchableOpacity style={m.backdrop} activeOpacity={1} onPress={() => { setCountryModalVisible(false); setSearchQuery("") }} />
+          <View style={m.sheet}>
+            <View style={m.handle} />
+            <View style={m.header}>
+              <Text style={m.title}>Select Country</Text>
+              <TouchableOpacity onPress={() => { setCountryModalVisible(false); setSearchQuery("") }} style={m.closeBtn}>
+                <Ionicons name="close" size={20} color={C.modalText} />
               </TouchableOpacity>
             </View>
-
-            <View style={styles.searchContainer}>
-              <Text style={styles.searchIcon}>🔍</Text>
+            <View style={m.searchRow}>
+              <Ionicons name="search" size={16} color={C.modalPH} style={{ marginRight: 8 }} />
               <TextInput
-                style={styles.searchInput}
-                placeholder="Search country..."
-                placeholderTextColor="#999"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
+                style={m.searchInput} placeholder="Search country…"
+                placeholderTextColor={C.modalPH} value={searchQuery} onChangeText={setSearchQuery}
               />
             </View>
-
             <FlatList
-              data={filteredCountries}
-              keyExtractor={(item) => item.code}
+              data={filteredCountries} keyExtractor={i => i.code}
               renderItem={({ item }) => (
-                <TouchableOpacity
-                  style={styles.listItem}
-                  onPress={() => handleCountrySelect(item)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.listItemFlag}>{item.flag}</Text>
-                  <Text style={styles.listItemText}>{item.name}</Text>
-                  {selectedCountry?.code === item.code && (
-                    <Text style={styles.checkmark}>✓</Text>
-                  )}
+                <TouchableOpacity style={m.listItem} onPress={() => handleCountrySelect(item)} activeOpacity={0.7}>
+                  <Text style={m.flag}>{item.flag}</Text>
+                  <Text style={m.itemText}>{item.name}</Text>
+                  {selectedCountry?.code === item.code && <Ionicons name="checkmark" size={18} color={C.modalSub} />}
                 </TouchableOpacity>
               )}
-              showsVerticalScrollIndicator={true}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ flexGrow: 1 }}
+              showsVerticalScrollIndicator keyboardShouldPersistTaps="handled"
+              ListEmptyComponent={() => <View style={m.empty}><Text style={m.emptyText}>No countries found</Text></View>}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── CITY MODAL ── */}
+      <Modal
+        animationType="slide" transparent
+        visible={cityModalVisible}
+        onRequestClose={() => { setCityModalVisible(false); setCitySearchQuery("") }}
+      >
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={m.overlay}>
+          <TouchableOpacity style={m.backdrop} activeOpacity={1} onPress={() => { setCityModalVisible(false); setCitySearchQuery("") }} />
+          <View style={m.sheet}>
+            <View style={m.handle} />
+            <View style={m.header}>
+              <View>
+                <Text style={m.title}>Select City</Text>
+                {selectedCountry && (
+                  <Text style={m.subtitle}>{selectedCountry.flag} {selectedCountry.name} · {cities.length} cities</Text>
+                )}
+              </View>
+              <TouchableOpacity onPress={() => { setCityModalVisible(false); setCitySearchQuery("") }} style={m.closeBtn}>
+                <Ionicons name="close" size={20} color={C.modalText} />
+              </TouchableOpacity>
+            </View>
+            <View style={m.searchRow}>
+              <Ionicons name="search" size={16} color={C.modalPH} style={{ marginRight: 8 }} />
+              <TextInput
+                style={m.searchInput} placeholder="Search city…" autoFocus
+                placeholderTextColor={C.modalPH} value={citySearchQuery} onChangeText={setCitySearchQuery}
+              />
+              {citySearchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setCitySearchQuery("")}>
+                  <Ionicons name="close-circle" size={18} color={C.modalPH} />
+                </TouchableOpacity>
+              )}
+            </View>
+            <FlatList
+              data={filteredCities} keyExtractor={(item, i) => `${item}-${i}`}
+              renderItem={({ item }) => (
+                <TouchableOpacity style={m.listItem} onPress={() => handleCitySelect(item)} activeOpacity={0.7}>
+                  <Ionicons name="location-outline" size={16} color={C.modalSub} style={{ marginRight: 12 }} />
+                  <Text style={m.itemText}>{item}</Text>
+                  {selectedCity === item && <Ionicons name="checkmark" size={18} color={C.modalSub} />}
+                </TouchableOpacity>
+              )}
+              showsVerticalScrollIndicator keyboardShouldPersistTaps="handled"
+              initialNumToRender={20} maxToRenderPerBatch={30} windowSize={10}
               ListEmptyComponent={() => (
-                <View style={styles.noDataContainer}>
-                  <Text style={styles.noDataText}>No countries found</Text>
+                <View style={m.empty}>
+                  <Text style={m.emptyText}>
+                    {citySearchQuery ? `No cities matching "${citySearchQuery}"` : "No cities available"}
+                  </Text>
                 </View>
               )}
             />
@@ -574,331 +764,194 @@ export default function RegisterStep3Screen({ navigation, route }) {
         </KeyboardAvoidingView>
       </Modal>
 
-      {/* Gender Modal */}
+      {/* ── GENDER MODAL ── */}
       <Modal
-        animationType="slide"
-        transparent={true}
+        animationType="slide" transparent
         visible={genderModalVisible}
         onRequestClose={() => setGenderModalVisible(false)}
       >
-        <View style={styles.modalOverlay}>
-          <TouchableOpacity 
-            style={styles.modalBackdrop} 
-            activeOpacity={1} 
-            onPress={() => setGenderModalVisible(false)}
-          />
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Select Gender</Text>
-              <TouchableOpacity 
-                onPress={() => setGenderModalVisible(false)} 
-                style={styles.closeButton}
-              >
-                <Text style={styles.closeButtonText}>✕</Text>
+        <View style={m.overlay}>
+          <TouchableOpacity style={m.backdrop} activeOpacity={1} onPress={() => setGenderModalVisible(false)} />
+          <View style={[m.sheet, { maxHeight: "45%" }]}>
+            <View style={m.handle} />
+            <View style={m.header}>
+              <Text style={m.title}>Select Gender</Text>
+              <TouchableOpacity onPress={() => setGenderModalVisible(false)} style={m.closeBtn}>
+                <Ionicons name="close" size={20} color={C.modalText} />
               </TouchableOpacity>
             </View>
-
-            <ScrollView style={styles.genderContainer} showsVerticalScrollIndicator={false}>
-              {genderOptions.map((option) => (
+            <ScrollView style={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+              {genderOptions.map(opt => (
                 <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.genderOption,
-                    gender?.value === option.value && styles.genderOptionSelected
-                  ]}
-                  onPress={() => handleGenderSelect(option)}
+                  key={opt.value}
+                  style={[m.genderOption, gender?.value === opt.value && m.genderOptionSelected]}
+                  onPress={() => handleGenderSelect(opt)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.genderIcon}>{option.icon}</Text>
-                  <Text style={[
-                    styles.genderLabel,
-                    gender?.value === option.value && styles.genderLabelSelected
-                  ]}>
-                    {option.label}
+                  <Text style={m.genderIcon}>{opt.icon}</Text>
+                  <Text style={[m.genderLabel, gender?.value === opt.value && m.genderLabelSelected]}>
+                    {opt.label}
                   </Text>
-                  {gender?.value === option.value && (
-                    <Text style={styles.genderCheckmark}>✓</Text>
-                  )}
+                  {gender?.value === opt.value && <Ionicons name="checkmark" size={18} color={C.modalSub} />}
                 </TouchableOpacity>
               ))}
             </ScrollView>
           </View>
         </View>
       </Modal>
-    </LinearGradient>
+
+    </View>
   )
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+// ─────────────────────────────────────────────────────────────
+//  SCREEN STYLES
+// ─────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.void },
+  blobTop: {
+    position: "absolute", width: 340, height: 340, borderRadius: 170,
+    backgroundColor: "#8B5CF618", top: -80, alignSelf: "center",
   },
-  keyboardView: {
-    flex: 1,
+  blobRight: {
+    position: "absolute", width: 240, height: 240, borderRadius: 120,
+    backgroundColor: "#F4C84212", top: "40%", right: -80,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 60,
-    paddingBottom: 40,
+  scroll: {
+    flexGrow: 1, paddingHorizontal: 22,
+    paddingTop: Platform.OS === "ios" ? 56 : 40,
+    paddingBottom: 44,
   },
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    marginBottom: 30,
+
+  // Back
+  backBtn: { marginBottom: 24 },
+  backBtnInner: {
+    width: 42, height: 42, borderRadius: 21,
+    backgroundColor: C.glass, borderWidth: 1, borderColor: C.faint,
+    justifyContent: "center", alignItems: "center",
   },
-  backButtonText: {
-    color: "white",
-    fontSize: 32,
-    fontWeight: "300",
-  },
-  headerSection: {
-    marginBottom: 32,
+
+  // Header
+  header: { marginBottom: 24 },
+  eyebrow: {
+    fontSize: 10, fontWeight: "700", letterSpacing: 3.5,
+    color: C.goldSoft, marginBottom: 10, opacity: 0.75,
   },
   title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "white",
-    marginBottom: 8,
-    letterSpacing: 0.5,
+    fontSize: 38, fontWeight: "800", color: C.white,
+    lineHeight: 46, letterSpacing: -0.4, marginBottom: 8,
   },
-  subtitle: {
-    fontSize: 16,
-    color: "rgba(255, 255, 255, 0.95)",
-    lineHeight: 22,
+  subtitle: { fontSize: 15, color: C.dim, lineHeight: 22 },
+
+  // Card
+  card: {
+    backgroundColor: C.cardBg,
+    borderRadius: 26, borderWidth: 1, borderColor: C.inputBorder,
+    padding: 20, marginBottom: 16,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.4, shadowRadius: 28, elevation: 12,
   },
-  formContainer: {
-    backgroundColor: "rgba(255, 255, 255, 0.98)",
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 10,
-  },
-  section: {
-    marginBottom: 24,
-  },
+
+  // Section
+  section: { marginBottom: 22 },
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 14 },
+  sectionDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: C.aurora },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#7B2CBF",
-    marginBottom: 16,
-    letterSpacing: 0.3,
+    fontSize: 14, fontWeight: "700", color: C.aurora,
+    letterSpacing: 0.5, textTransform: "uppercase",
   },
-  inputWrapper: {
-    marginBottom: 16,
+
+  // Input
+  inputText: { flex: 1, color: C.white, fontSize: 15, paddingVertical: 15 },
+  dimText:   { color: C.dim },
+
+  // Age pill
+  agePill: {
+    backgroundColor: "rgba(244,200,66,0.18)", borderRadius: 10,
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderWidth: 1, borderColor: C.borderGold,
   },
-  input: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    fontSize: 16,
-    borderWidth: 1,
-    borderColor: "transparent",
-    color: "#333",
+  agePillText: { color: C.gold, fontSize: 11, fontWeight: "700" },
+
+  // Optional tag
+  optionalTag: {
+    fontSize: 11, color: C.dim, fontStyle: "italic",
+    backgroundColor: C.glass, borderRadius: 8,
+    paddingHorizontal: 7, paddingVertical: 2,
   },
-  inputError: {
-    borderColor: "#FF4458",
-    borderWidth: 1.5,
+
+  // Errors / helpers
+  errorText:  { color: C.error, fontSize: 12, marginTop: -6, marginBottom: 8, marginLeft: 4 },
+  helperText: { color: C.goldSoft, fontSize: 12, marginTop: -6, marginBottom: 8, marginLeft: 4, fontStyle: "italic" },
+  requiredNote: { color: C.dim, fontSize: 12, textAlign: "center", marginBottom: 20, fontStyle: "italic" },
+
+  // Continue button
+  continueBtn: {
+    borderRadius: 18, borderWidth: 1.5, borderColor: C.gold, overflow: "hidden",
   },
-  selector: {
-    backgroundColor: "#F8F9FA",
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderWidth: 1,
-    borderColor: "transparent",
+  continueBtnDisabled: { opacity: 0.5 },
+  continueBtnInner: {
+    backgroundColor: "rgba(244,200,66,0.12)",
+    paddingVertical: 17, alignItems: "center",
   },
-  selectorText: {
-    fontSize: 16,
-    color: "#333",
-    flex: 1,
+  continueBtnText: { color: C.gold, fontSize: 16, fontWeight: "700", letterSpacing: 0.4 },
+  loadingRow: { flexDirection: "row", alignItems: "center" },
+})
+
+// ─────────────────────────────────────────────────────────────
+//  MODAL STYLES  (light surface — keeps familiar picker UX)
+// ─────────────────────────────────────────────────────────────
+const m = StyleSheet.create({
+  overlay:  { flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" },
+  backdrop: { flex: 1 },
+  sheet: {
+    backgroundColor: C.modalBg,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingTop: 12, maxHeight: "85%",
+    shadowColor: "#000", shadowOffset: { width: 0, height: -8 },
+    shadowOpacity: 0.2, shadowRadius: 16, elevation: 12,
   },
-  placeholderText: {
-    color: "#999",
+  handle: {
+    width: 40, height: 4, borderRadius: 2,
+    backgroundColor: "#DDD", alignSelf: "center", marginBottom: 16,
   },
-  selectorArrow: {
-    fontSize: 24,
-    color: "#7B2CBF",
-    fontWeight: "300",
+  header: {
+    flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+    paddingHorizontal: 24, paddingBottom: 14,
+    borderBottomWidth: 1, borderBottomColor: C.modalLine,
   },
-  errorText: {
-    color: "#FF4458",
-    fontSize: 12,
-    marginTop: 6,
-    marginLeft: 4,
-    fontWeight: "500",
+  title:    { fontSize: 20, fontWeight: "800", color: C.modalText },
+  subtitle: { fontSize: 13, color: C.modalSub, marginTop: 2 },
+  closeBtn: {
+    width: 32, height: 32, borderRadius: 16,
+    backgroundColor: "#F0F0F0", justifyContent: "center", alignItems: "center",
   },
-  requiredNote: {
-    color: "rgba(255, 255, 255, 0.9)",
-    fontSize: 13,
-    marginBottom: 24,
-    textAlign: "center",
-    fontStyle: "italic",
+  searchRow: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "#F5F5F5",
+    marginHorizontal: 20, marginVertical: 14,
+    paddingHorizontal: 14, borderRadius: 14,
   },
-  button: {
-    borderRadius: 30,
-    overflow: "hidden",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonGradient: {
-    paddingVertical: 18,
-    alignItems: "center",
-  },
-  buttonText: {
-    color: "white",
-    fontSize: 18,
-    fontWeight: "bold",
-    letterSpacing: 0.5,
-  },
-  loadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "flex-end",
-  },
-  modalBackdrop: {
-    flex: 1,
-  },
-  modalContent: {
-    backgroundColor: "white",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingTop: 20,
-    maxHeight: "85%",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingHorizontal: 24,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#333",
-  },
-  closeButton: {
-    width: 32,
-    height: 32,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    borderRadius: 16,
-  },
-  closeButtonText: {
-    fontSize: 20,
-    color: "#666",
-    fontWeight: "300",
-  },
-  searchContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    marginHorizontal: 24,
-    marginVertical: 16,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-  },
-  searchIcon: {
-    fontSize: 18,
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: "#333",
-  },
+  searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: C.modalText },
   listItem: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F0F0F0",
+    flexDirection: "row", alignItems: "center",
+    paddingVertical: 14, paddingHorizontal: 24,
+    borderBottomWidth: 1, borderBottomColor: C.modalLine,
   },
-  listItemFlag: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  listItemText: {
-    flex: 1,
-    fontSize: 16,
-    color: "#333",
-  },
-  checkmark: {
-    fontSize: 20,
-    color: "#7B2CBF",
-    fontWeight: "bold",
-  },
-  noDataContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 40,
-  },
-  noDataText: {
-    fontSize: 16,
-    color: "#999",
-  },
-  genderContainer: {
-    padding: 24,
-  },
+  flag:     { fontSize: 22, marginRight: 12 },
+  itemText: { flex: 1, fontSize: 15, color: C.modalText },
+  empty: { flex: 1, justifyContent: "center", alignItems: "center", paddingVertical: 40 },
+  emptyText: { fontSize: 15, color: C.modalPH },
+
+  // Gender
   genderOption: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8F9FA",
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: "transparent",
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "#F8F8F8", borderRadius: 16,
+    paddingVertical: 16, paddingHorizontal: 18,
+    marginBottom: 10, borderWidth: 2, borderColor: "transparent",
   },
-  genderOptionSelected: {
-    backgroundColor: "#F3E8FF",
-    borderColor: "#7B2CBF",
-  },
-  genderIcon: {
-    fontSize: 24,
-    marginRight: 12,
-  },
-  genderLabel: {
-    flex: 1,
-    fontSize: 16,
-    color: "#333",
-    fontWeight: "500",
-  },
-  genderLabelSelected: {
-    color: "#7B2CBF",
-    fontWeight: "600",
-  },
-  genderCheckmark: {
-    fontSize: 20,
-    color: "#7B2CBF",
-    fontWeight: "bold",
-  },
+  genderOptionSelected: { backgroundColor: "#F3E8FF", borderColor: C.modalSub },
+  genderIcon:  { fontSize: 22, marginRight: 14 },
+  genderLabel: { flex: 1, fontSize: 16, color: C.modalText, fontWeight: "500" },
+  genderLabelSelected: { color: C.modalSub, fontWeight: "700" },
 })

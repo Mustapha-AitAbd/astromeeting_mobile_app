@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "493590341652",
+    "project_id": "syni-eb99e",
+    "storage_bucket": "syni-eb99e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:493590341652:android:244f067c52fc039bb2df01",
+        "android_client_info": {
+          "package_name": "com.mustapha01.syni"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZHSglr53anzBaU7lTwjDdOxNuahY-84I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

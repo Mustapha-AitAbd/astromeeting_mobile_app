@@ -1,6 +1,6 @@
 import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL } from '@env';
+import { EXPO_PUBLIC_API_URL } from '@env';
 
 export const AuthContext = createContext();
 
@@ -57,7 +57,7 @@ export const AuthProvider = ({ children }) => {
   const fetchUserProfile = async (authToken) => {
     try {
       console.log('🔍 Fetching user profile...');
-      const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
+      const response = await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/me`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${authToken}`,
@@ -87,14 +87,17 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ---- LOGIN ----
+  // ---- LOGIN WITH EMAIL/PASSWORD ----
   const login = async (email, password) => {
     console.log('🔹 Attempting to connect with:', email);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
+      const response = await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/login`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          "ngrok-skip-browser-warning": "true"
+         },
         body: JSON.stringify({ email, password }),
       });
 
@@ -124,11 +127,33 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // ✅ NOUVELLE FONCTION - LOGIN WITH EXISTING TOKEN
+  const loginWithToken = async (authToken) => {
+    console.log('🔹 Logging in with existing token...');
+
+    try {
+      // Sauvegarder le token
+      await AsyncStorage.setItem('token', authToken);
+      setToken(authToken);
+      
+      console.log('✅ Token saved, fetching user profile...');
+      
+      // Récupérer le profil utilisateur
+      await fetchUserProfile(authToken);
+      
+      console.log('✅ Authentication with token successful!');
+      return { success: true };
+    } catch (error) {
+      console.error('🔥 Error logging in with token:', error);
+      return { success: false, message: 'Failed to authenticate with token' };
+    }
+  };
+
   // ---- LOGOUT ----
   const logout = async () => {
     try {
       if (token) {
-        await fetch(`${API_BASE_URL}/api/auth/logout`, {
+        await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
@@ -154,9 +179,12 @@ export const AuthProvider = ({ children }) => {
     console.log('🔹 Attempting to register...');
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
+      const response = await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/register`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          "ngrok-skip-browser-warning": "true"
+         },
         body: JSON.stringify(userData),
       });
 
@@ -185,7 +213,8 @@ export const AuthProvider = ({ children }) => {
   return (
     <AuthContext.Provider value={{ 
       isAuthenticated, 
-      login, 
+      login,
+      loginWithToken, // ✅ Ajouter cette nouvelle fonction
       logout, 
       register,
       token,

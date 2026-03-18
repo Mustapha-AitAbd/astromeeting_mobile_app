@@ -1,0 +1,51 @@
+{
+  "cli": {
+    "version": ">= 16.28.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://backendastomeetingapp-production.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "576392076825-pmfl6u4bte3ckj0su0m9dgtogb6sj5pf.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "576392076825-3m76s6npgd88rtah8j4et1gpq7ciehja.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "576392076825-j4cflscf5ks29mupq6g8h15nscgm0h0c.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "576392076825-j4cflscf5ks29mupq6g8h15nscgm0h0c.apps.googleusercontent.com"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://backendastomeetingapp-production.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "576392076825-pmfl6u4bte3ckj0su0m9dgtogb6sj5pf.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "576392076825-3m76s6npgd88rtah8j4et1gpq7ciehja.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "576392076825-j4cflscf5ks29mupq6g8h15nscgm0h0c.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "576392076825-j4cflscf5ks29mupq6g8h15nscgm0h0c.apps.googleusercontent.com"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://backendastomeetingapp-production.up.railway.app",
+        "EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID": "576392076825-pmfl6u4bte3ckj0su0m9dgtogb6sj5pf.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "576392076825-3m76s6npgd88rtah8j4et1gpq7ciehja.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "576392076825-j4cflscf5ks29mupq6g8h15nscgm0h0c.apps.googleusercontent.com",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "576392076825-j4cflscf5ks29mupq6g8h15nscgm0h0c.apps.googleusercontent.com"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

@@ -1,541 +1,539 @@
-"use client"
-
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  Alert,
+  View, Text, TextInput, TouchableOpacity, StyleSheet,
+  Image, KeyboardAvoidingView, Platform, ScrollView, Alert,
+  Dimensions, Animated, StatusBar,
 } from "react-native"
-import { LinearGradient } from "expo-linear-gradient"
-import * as WebBrowser from "expo-web-browser"
-import * as Google from "expo-auth-session/providers/google"
+import { Ionicons } from "@expo/vector-icons"
 import AsyncStorage from "@react-native-async-storage/async-storage"
+import DisclaimerCard from "../../components/DisclaimerCard"
+import { useGoogleAuth } from "../../hooks/useGoogleAuth"
 
-WebBrowser.maybeCompleteAuthSession()
+const { width, height } = Dimensions.get("window")
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL
 
-// Configuration de l'URL de base de l'API
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || "http://192.168.1.100:5000"
+const C = {
+  void:       "#07011A",
+  cosmos:     "#110330",
+  nebula:     "#1E0A4A",
+  aurora:     "#8B5CF6",
+  gold:       "#F4C842",
+  goldSoft:   "#FDE68A",
+  rose:       "#F472B6",
+  white:      "#FFFFFF",
+  dim:        "rgba(255,255,255,0.55)",
+  faint:      "rgba(255,255,255,0.15)",
+  glass:      "rgba(255,255,255,0.07)",
+  inputBg:    "rgba(255,255,255,0.08)",
+  inputBorder:"rgba(255,255,255,0.18)",
+  cardBg:     "rgba(17,3,48,0.92)",
+  borderGold: "rgba(244,200,66,0.22)",
+  error:      "#FF6B6B",
+}
+
+const STARS = Array.from({ length: 55 }, (_, i) => ({
+  id: i,
+  x: Math.random() * 100,
+  y: Math.random() * 100,
+  r: Math.random() * 1.6 + 0.4,
+  o: Math.random() * 0.5 + 0.12,
+}))
+
+function StarField() {
+  return (
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      {STARS.map(s => (
+        <View
+          key={s.id}
+          style={{
+            position: "absolute",
+            left: `${s.x}%`,
+            top: `${s.y}%`,
+            width: s.r * 2,
+            height: s.r * 2,
+            borderRadius: s.r,
+            backgroundColor: C.white,
+            opacity: s.o,
+          }}
+        />
+      ))}
+    </View>
+  )
+}
+
+function GlassInput({ icon, hasError, children, style }) {
+  return (
+    <View style={[gi.wrap, hasError && gi.wrapError, style]}>
+      {icon && <Ionicons name={icon} size={18} color={C.dim} style={gi.icon} />}
+      {children}
+    </View>
+  )
+}
+const gi = StyleSheet.create({
+  wrap: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: C.inputBg,
+    borderWidth: 1, borderColor: C.inputBorder,
+    borderRadius: 16, paddingHorizontal: 16,
+    marginBottom: 14,
+  },
+  wrapError: { borderColor: C.error },
+  icon: { marginRight: 10 },
+})
 
 export default function RegisterStep1Screen({ navigation }) {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [error, setError] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
+  const [email,             setEmail]             = useState("")
+  const [password,          setPassword]          = useState("")
+  const [confirmPassword,   setConfirmPassword]   = useState("")
+  const [error,             setError]             = useState("")
+  const [manualLoading,     setManualLoading]     = useState(false)
+  const [isPasswordVisible, setIsPasswordVisible] = useState(false)
+  const [isConfirmVisible,  setIsConfirmVisible]  = useState(false)
+  const [disclaimerAccepted,  setDisclaimerAccepted]  = useState(false)
+  const [showDisclaimerCard,  setShowDisclaimerCard]  = useState(false)
 
-  // --- CONFIG GOOGLE OAUTH ---
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
-    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+  const fadeIn  = useRef(new Animated.Value(0)).current
+  const slideUp = useRef(new Animated.Value(40)).current
+  const pulse   = useRef(new Animated.Value(0)).current
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeIn,  { toValue: 1, duration: 600, delay: 100, useNativeDriver: true }),
+      Animated.timing(slideUp, { toValue: 0, duration: 600, delay: 100, useNativeDriver: true }),
+    ]).start()
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 1800, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0, duration: 1800, useNativeDriver: true }),
+      ])
+    ).start()
+  }, [])
+
+  // ✅ Hook Google — remplace tout l'ancien code Google OAuth
+  const { signInWithGoogle, isLoading: googleLoading, request } = useGoogleAuth({
+    onNewUser: (data) => {
+      // Nouvel utilisateur → compléter le profil, pas de vérification email
+      navigation.replace("RegisterStep3", {
+        email:              data.user.email,
+        password:           null,
+        registrationMethod: "google",
+        userId:             data.user.id,
+        token:              data.token,
+        user:               data.user,
+        fromGoogle:         true,
+      })
+    },
+    onExistingUser: (data) => {
+      // Utilisateur existant → directement Home
+      Alert.alert("Welcome back! 🎉", `Welcome back, ${data.user.name || "User"}!`, [{
+        text: "Continue",
+        onPress: () => navigation.replace("Home", { user: data.user, token: data.token }),
+      }])
+    },
+    onError: (msg) => setError(msg),
   })
 
-  // Handle Google OAuth response
-  useEffect(() => {
-    if (response?.type === "success") {
-      handleGoogleSuccess(response.authentication)
-    } else if (response?.type === "error") {
-      console.log("Google OAuth Error:", response.error)
-      setError("Google sign-in failed. Please try again.")
-    }
-  }, [response])
+  const isLoading = manualLoading || googleLoading
 
-  // --- VALIDATION ---
   const validateForm = () => {
+    if (!disclaimerAccepted) {
+      setError("Please read and accept the Terms and Conditions to continue")
+      return false
+    }
     if (!email || !password || !confirmPassword) {
       setError("Please fill in all fields")
       return false
     }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       setError("Please enter a valid email address")
       return false
     }
-
     if (password.length < 6) {
       setError("Password must be at least 6 characters")
       return false
     }
-
     if (password !== confirmPassword) {
       setError("Passwords do not match")
       return false
     }
-
     return true
   }
 
-  // --- MANUAL REGISTER (email / password) ---
   const handleManualRegister = async () => {
     setError("")
-    
-    if (!validateForm()) {
-      return
-    }
-
-    setIsLoading(true)
-
+    if (!validateForm()) return
+    setManualLoading(true)
     try {
-      console.log("📤 Inscription à:", `${API_BASE_URL}/api/auth/register`)
-      
       const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ 
-          email, 
-          password,
-          name: email.split('@')[0],
-          dateOfBirth: new Date('2000-01-01'),
-          gender: 'F'
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email, password,
+          name: email.split("@")[0],
+          disclaimerAccepted: true,
+          consentTimestamp: new Date().toISOString(),
         }),
       })
-
       const data = await response.json()
-      console.log("📥 Réponse du serveur:", data)
-
-      if (!response.ok) {
-        console.log("❌ Erreur d'inscription:", data)
-        setError(data.message || "Registration failed")
-        return
-      }
-
-      // Sauvegarder le token et les infos utilisateur
+      if (!response.ok) { setError(data.message || "Registration failed"); return }
       if (data.token) {
-        await AsyncStorage.setItem('userToken', data.token)
-        await AsyncStorage.setItem('userId', data.user.id)
-        await AsyncStorage.setItem('userEmail', data.user.email)
-        console.log("✅ Token sauvegardé")
+        await AsyncStorage.setItem("userToken", data.token)
+        await AsyncStorage.setItem("userId",    data.user.id)
+        await AsyncStorage.setItem("userEmail", data.user.email)
       }
-
       Alert.alert(
-        "Success! 📧", 
-        "Account created successfully! A verification code has been sent to your email.",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              // Navigation vers l'écran de vérification d'email
-              navigation.navigate("EmailVerification", { 
-                email: data.user.email,
-                userId: data.user.id,
-                token: data.token,
-                user: data.user
-              })
-            }
-          }
-        ]
+        "Success! 📧",
+        "Account created! A verification code has been sent to your email.",
+        [{
+          text: "OK",
+          onPress: () => navigation.navigate("EmailVerification", {
+            email: data.user.email, userId: data.user.id,
+            token: data.token, user: data.user,
+          }),
+        }]
       )
-
     } catch (error) {
-      console.error("❌ Erreur réseau:", error)
       setError("Unable to connect to the server. Please check your internet connection.")
     } finally {
-      setIsLoading(false)
+      setManualLoading(false)
     }
   }
 
-  // --- GOOGLE REGISTER SUCCESS ---
-  const handleGoogleSuccess = async (authentication) => {
-    if (!authentication?.idToken) {
-      setError("Failed to get authentication token")
-      return
-    }
-
-    setIsLoading(true)
-    
-    try {
-      console.log("📤 Connexion Google à:", `${API_BASE_URL}/api/auth/google`)
-      
-      const response = await fetch(`${API_BASE_URL}/api/auth/google`, {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json" 
-        },
-        body: JSON.stringify({ 
-          idToken: authentication.idToken 
-        }),
-      })
-
-      const data = await response.json()
-      console.log("📥 Réponse Google du serveur:", data)
-
-      if (!response.ok) {
-        console.log("❌ Erreur de connexion Google:", data)
-        setError(data.message || "Unable to sign up with Google")
-        return
-      }
-
-      // Sauvegarder le token dans AsyncStorage
-      if (data.token) {
-        await AsyncStorage.setItem('userToken', data.token)
-        await AsyncStorage.setItem('userId', data.user.id)
-        await AsyncStorage.setItem('userEmail', data.user.email)
-        console.log("✅ Token Google sauvegardé")
-      }
-
-      Alert.alert(
-        "Success! 🎉", 
-        "Signed up successfully with Google!",
-        [
-          {
-            text: "OK",
-            onPress: () => {
-              // Si l'email est déjà vérifié via Google, aller directement au profil
-              if (data.user.emailVerified) {
-                navigation.navigate("Home", { 
-                  user: data.user,
-                  token: data.token
-                })
-              } else {
-                // Sinon, demander la vérification
-                navigation.navigate("EmailVerification", { 
-                  email: data.user.email,
-                  userId: data.user.id,
-                  token: data.token,
-                  user: data.user,
-                  fromGoogle: true
-                })
-              }
-            }
-          }
-        ]
-      )
-
-    } catch (error) {
-      console.error("❌ Erreur de connexion Google:", error)
-      setError("Google sign-in failed. Please try again.")
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // --- GOOGLE REGISTER ---
+  // ✅ Bouton Google — juste vérifier disclaimer puis appeler le hook
   const handleGoogleRegister = async () => {
-    if (!request) {
-      setError("Google Sign-In is not ready yet. Please try again.")
+    if (!disclaimerAccepted) {
+      setError("Please read and accept the Terms and Conditions to continue")
       return
     }
-
-    try {
-      console.log("🔐 Ouverture de Google Sign-In...")
-      await promptAsync()
-    } catch (error) {
-      console.error("❌ Erreur d'ouverture Google Sign-In:", error)
-      setError("Failed to open Google Sign-In")
-    }
+    setError("")
+    await signInWithGoogle()
   }
+
+  const handleAcceptDisclaimer = () => {
+    setDisclaimerAccepted(true)
+    setShowDisclaimerCard(false)
+    setError("")
+  }
+  const handleDeclineDisclaimer = () => setShowDisclaimerCard(false)
+
+  const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.04] })
 
   return (
-    <LinearGradient colors={["#8B3A8B", "#C74B9C", "#E85D9A"]} style={styles.container}>
-      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardView}>
+    <View style={s.container}>
+      <StatusBar barStyle="light-content" backgroundColor={C.void} />
+      <StarField />
+      <View style={s.blobTop} />
+      <View style={s.blobBottom} />
+
+      <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
         <ScrollView
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={s.scroll}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
         >
-          {/* Logo */}
-          <View style={styles.logoContainer}>
-            <Image source={require("../../assets/logo.jpeg")} style={styles.logo} resizeMode="contain" />
-            <Text style={styles.appName}>Syni</Text>
-          </View>
-
-          {/* Title */}
-          <View style={styles.headerContainer}>
-            <Text style={styles.title}>Create Account</Text>
-            <Text style={styles.subtitle}>Sign up to get started</Text>
-          </View>
-
-          {/* Error Message */}
-          {error ? (
-            <View style={styles.errorContainer}>
-              <Text style={styles.errorText}>⚠ {error}</Text>
+          <Animated.View style={[s.header, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
+            <View style={s.orbWrap}>
+              <Animated.View style={[s.orbRing3]} />
+              <Animated.View style={[s.orbRing2]} />
+              <View style={s.orbRing1} />
+              <View style={s.orbGlow} />
+              <View style={s.orbDot} />
+              <Animated.View style={[s.orbCenter, { transform: [{ scale: pulseScale }] }]}>
+                <Image source={require("../../assets/logo.jpeg")} style={s.logo} resizeMode="contain" />
+              </Animated.View>
             </View>
-          ) : null}
+            <Text style={s.appName}>Syni</Text>
+            <Text style={s.tagline}>Begin your cosmic journey ✦</Text>
+          </Animated.View>
 
-          {/* Input Fields */}
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={[styles.input, error && styles.inputError]}
-              placeholder="Email"
-              placeholderTextColor="#999"
-              value={email}
-              onChangeText={(text) => {
-                setEmail(text)
-                setError("")
-              }}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              editable={!isLoading}
-            />
+          <Animated.View style={[s.card, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
+            <Text style={s.eyebrow}>CREATE YOUR UNIVERSE</Text>
+            <Text style={s.cardTitle}>Create Account</Text>
+            <Text style={s.cardSub}>Sign up to get started</Text>
 
-            <TextInput
-              style={[styles.input, error && styles.inputError]}
-              placeholder="Password"
-              placeholderTextColor="#999"
-              value={password}
-              onChangeText={(text) => {
-                setPassword(text)
-                setError("")
-              }}
-              secureTextEntry
-              editable={!isLoading}
-            />
-
-            <TextInput
-              style={[styles.input, error && styles.inputError]}
-              placeholder="Confirm Password"
-              placeholderTextColor="#999"
-              value={confirmPassword}
-              onChangeText={(text) => {
-                setConfirmPassword(text)
-                setError("")
-              }}
-              secureTextEntry
-              editable={!isLoading}
-            />
-          </View>
-
-          {/* Continue Button */}
-          <TouchableOpacity
-            style={[styles.continueButton, isLoading && styles.buttonDisabled]}
-            onPress={handleManualRegister}
-            disabled={isLoading}
-          >
-            {isLoading ? (
-              <View style={styles.loadingContainer}>
-                <Text style={styles.loadingDot}>•</Text>
-                <Text style={styles.loadingDot}>•</Text>
-                <Text style={styles.loadingDot}>•</Text>
+            {error ? (
+              <View style={s.errorBanner}>
+                <Ionicons name="alert-circle-outline" size={15} color={C.error} />
+                <Text style={s.errorText}>{error}</Text>
               </View>
-            ) : (
-              <Text style={styles.continueButtonText}>Continue</Text>
-            )}
-          </TouchableOpacity>
+            ) : null}
 
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.dividerLine} />
-          </View>
+            <GlassInput icon="mail-outline" hasError={!!error}>
+              <TextInput
+                style={s.inputText}
+                placeholder="Email address"
+                placeholderTextColor={C.dim}
+                value={email}
+                onChangeText={t => { setEmail(t); setError("") }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                editable={!isLoading}
+              />
+            </GlassInput>
 
-          {/* Google Sign-up Button */}
-          <TouchableOpacity
-            style={[styles.googleButton, (!request || isLoading) && styles.buttonDisabled]}
-            disabled={!request || isLoading}
-            onPress={handleGoogleRegister}
-          >
-            <View style={styles.socialButtonContent}>
-              <Text style={styles.googleIcon}>G</Text>
-              <Text style={styles.googleButtonText}>Sign up with Google</Text>
+            <GlassInput icon="lock-closed-outline" hasError={!!error}>
+              <TextInput
+                style={[s.inputText, { flex: 1 }]}
+                placeholder="Password"
+                placeholderTextColor={C.dim}
+                value={password}
+                onChangeText={t => { setPassword(t); setError("") }}
+                secureTextEntry={!isPasswordVisible}
+                editable={!isLoading}
+              />
+              <TouchableOpacity onPress={() => setIsPasswordVisible(!isPasswordVisible)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name={isPasswordVisible ? "eye-outline" : "eye-off-outline"} size={20} color={C.dim} />
+              </TouchableOpacity>
+            </GlassInput>
+
+            <GlassInput icon="shield-checkmark-outline" hasError={!!error}>
+              <TextInput
+                style={[s.inputText, { flex: 1 }]}
+                placeholder="Confirm Password"
+                placeholderTextColor={C.dim}
+                value={confirmPassword}
+                onChangeText={t => { setConfirmPassword(t); setError("") }}
+                secureTextEntry={!isConfirmVisible}
+                editable={!isLoading}
+              />
+              <TouchableOpacity onPress={() => setIsConfirmVisible(!isConfirmVisible)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name={isConfirmVisible ? "eye-outline" : "eye-off-outline"} size={20} color={C.dim} />
+              </TouchableOpacity>
+            </GlassInput>
+
+            <View style={s.termsSection}>
+              <TouchableOpacity
+                style={s.readTermsBtn}
+                onPress={() => setShowDisclaimerCard(true)}
+                activeOpacity={0.8}
+                disabled={isLoading}
+              >
+                <View style={s.readTermsInner}>
+                  <View style={s.readTermsIconWrap}>
+                    <Ionicons name="document-text-outline" size={20} color={C.gold} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.readTermsTitle}>Terms & Conditions</Text>
+                    <Text style={s.readTermsSub}>Tap to read before accepting</Text>
+                  </View>
+                  <Text style={s.readTermsArrow}>›</Text>
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={s.checkboxRow}
+                onPress={() => setDisclaimerAccepted(prev => !prev)}
+                activeOpacity={0.7}
+                disabled={isLoading}
+              >
+                <View style={[s.checkbox, disclaimerAccepted && s.checkboxChecked]}>
+                  {disclaimerAccepted && (
+                    <Ionicons name="checkmark" size={14} color={C.cosmos} />
+                  )}
+                </View>
+                <Text style={s.checkboxLabel}>
+                  I confirm I am 18+ and agree to the Terms.{"\n"}
+                  I accept the Privacy Policy and compatibility profiling.
+                </Text>
+              </TouchableOpacity>
             </View>
-          </TouchableOpacity>
 
-          {/* Bottom Links */}
-          <View style={styles.bottomContainer}>
-            <Text style={styles.loginText}>Already have an account?</Text>
-            <TouchableOpacity onPress={() => navigation.navigate("Login")}>
-              <Text style={styles.loginLink}>Log in</Text>
+            <TouchableOpacity
+              style={[s.primaryBtn, (isLoading || !disclaimerAccepted) && s.btnDisabled]}
+              onPress={handleManualRegister}
+              disabled={isLoading || !disclaimerAccepted}
+              activeOpacity={0.85}
+            >
+              <View style={s.primaryBtnInner}>
+                {manualLoading ? (
+                  <View style={s.dots}><Text style={s.dot}>•</Text><Text style={s.dot}>•</Text><Text style={s.dot}>•</Text></View>
+                ) : (
+                  <Text style={s.primaryBtnText}>Continue  →</Text>
+                )}
+              </View>
             </TouchableOpacity>
-          </View>
 
-          {/* Legal Text */}
-          <Text style={styles.legalText}>
+            <View style={s.dividerRow}>
+              <View style={s.dividerLine} />
+              <Text style={s.dividerLabel}>or continue with</Text>
+              <View style={s.dividerLine} />
+            </View>
+
+            <TouchableOpacity
+              style={[s.googleBtn, (isLoading || !disclaimerAccepted) && s.btnDisabled]}
+              disabled={isLoading || !disclaimerAccepted}
+              onPress={handleGoogleRegister}
+              activeOpacity={0.8}
+            >
+              <View style={s.googleBtnInner}>
+                {googleLoading ? (
+                  <>
+                    <Text style={s.dot}>•</Text>
+                    <Text style={s.googleBtnText}>Connecting…</Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={s.googleLetter}>G</Text>
+                    <Text style={s.googleBtnText}>Sign up with Google</Text>
+                  </>
+                )}
+              </View>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <Animated.View style={[s.footer, { opacity: fadeIn }]}>
+            <Text style={s.footerText}>Already have an account?</Text>
+            <TouchableOpacity onPress={() => navigation.navigate("Login")}>
+              <Text style={s.footerLink}>Sign in  ✦</Text>
+            </TouchableOpacity>
+          </Animated.View>
+
+          <Text style={s.legal}>
             By signing up, you agree to our Terms of Service and Privacy Policy
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
-    </LinearGradient>
+
+      <DisclaimerCard
+        visible={showDisclaimerCard}
+        onClose={handleDeclineDisclaimer}
+        onAccept={handleAcceptDisclaimer}
+      />
+    </View>
   )
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+const ORB = 120
+
+const s = StyleSheet.create({
+  container: { flex: 1, backgroundColor: C.void },
+  blobTop: {
+    position: "absolute", width: 360, height: 360, borderRadius: 180,
+    backgroundColor: "#8B5CF618", top: -80, alignSelf: "center",
   },
-  keyboardView: {
-    flex: 1,
+  blobBottom: {
+    position: "absolute", width: 280, height: 280, borderRadius: 140,
+    backgroundColor: "#F472B610", bottom: 40, right: -80,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 30,
-    paddingTop: 50,
-    paddingBottom: 30,
+  scroll: {
+    flexGrow: 1, paddingHorizontal: 24,
+    paddingTop: Platform.OS === "ios" ? 60 : 44, paddingBottom: 36,
   },
-  logoContainer: {
-    alignItems: "center",
-    marginTop: 10,
-    marginBottom: 30,
+  header: { alignItems: "center", marginBottom: 32 },
+  orbWrap: {
+    width: ORB + 60, height: ORB + 60,
+    alignItems: "center", justifyContent: "center",
+    alignSelf: "center", marginBottom: 16,
   },
-  logo: {
-    width: 80,
-    height: 80,
-    marginBottom: 12,
-    borderRadius: 20,
+  orbRing3: {
+    position: "absolute", width: ORB + 60, height: ORB + 60,
+    borderRadius: (ORB + 60) / 2,
+    borderWidth: 1, borderColor: "#8B5CF618", borderStyle: "dashed",
   },
-  appName: {
-    fontSize: 36,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    letterSpacing: 2,
+  orbRing2: {
+    position: "absolute", width: ORB + 28, height: ORB + 28,
+    borderRadius: (ORB + 28) / 2, borderWidth: 1, borderColor: "#8B5CF628",
   },
-  headerContainer: {
-    marginBottom: 30,
+  orbRing1: {
+    position: "absolute", width: ORB, height: ORB, borderRadius: ORB / 2,
+    borderWidth: 1.5, borderColor: "#8B5CF640",
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    marginBottom: 8,
+  orbGlow: {
+    position: "absolute", width: 72, height: 72, borderRadius: 36,
+    backgroundColor: "#8B5CF622",
   },
-  subtitle: {
-    fontSize: 16,
-    color: "rgba(255, 255, 255, 0.9)",
+  orbDot: {
+    position: "absolute", width: 8, height: 8, borderRadius: 4,
+    backgroundColor: C.aurora, top: 8, left: "50%",
   },
-  errorContainer: {
-    backgroundColor: "rgba(255, 59, 48, 0.15)",
-    borderLeftWidth: 4,
-    borderLeftColor: "#FF3B30",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    marginBottom: 20,
+  orbCenter: {
+    width: 64, height: 64, borderRadius: 32, overflow: "hidden",
+    borderWidth: 1.5, borderColor: "#8B5CF660",
   },
-  errorText: {
-    color: "#FF3B30",
-    fontSize: 14,
-    fontWeight: "600",
+  logo: { width: 64, height: 64, borderRadius: 32 },
+  appName: { fontSize: 38, fontWeight: "800", color: C.white, letterSpacing: 4, marginBottom: 6 },
+  tagline: { fontSize: 13, color: C.aurora, letterSpacing: 0.5, opacity: 0.85 },
+  card: {
+    backgroundColor: C.cardBg, borderRadius: 28, borderWidth: 1,
+    borderColor: C.inputBorder, padding: 24, marginBottom: 24,
+    shadowColor: "#000", shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.4, shadowRadius: 32, elevation: 12,
   },
-  inputContainer: {
-    marginBottom: 20,
+  eyebrow: {
+    fontSize: 10, fontWeight: "700", letterSpacing: 3,
+    color: C.dim, textAlign: "center", marginBottom: 8,
   },
-  input: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    fontSize: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
+  cardTitle: { fontSize: 26, fontWeight: "800", color: C.white, marginBottom: 4 },
+  cardSub:   { fontSize: 14, color: C.dim, marginBottom: 22 },
+  errorBanner: {
+    flexDirection: "row", alignItems: "center",
+    backgroundColor: "rgba(255,107,107,0.12)",
+    borderWidth: 1, borderColor: "rgba(255,107,107,0.35)",
+    borderRadius: 12, paddingVertical: 10, paddingHorizontal: 14,
+    marginBottom: 16, gap: 8,
   },
-  inputError: {
-    borderWidth: 1.5,
-    borderColor: "#FF3B30",
+  errorText: { color: C.error, fontSize: 13, flex: 1 },
+  inputText: { flex: 1, color: C.white, fontSize: 15, paddingVertical: 16 },
+  termsSection: { marginBottom: 22 },
+  readTermsBtn: {
+    borderRadius: 16, borderWidth: 1, borderColor: C.borderGold,
+    backgroundColor: "rgba(244,200,66,0.07)", marginBottom: 12, overflow: "hidden",
   },
-  continueButton: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: "center",
-    marginBottom: 25,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 8,
+  readTermsInner: { flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
+  readTermsIconWrap: {
+    width: 38, height: 38, borderRadius: 19,
+    backgroundColor: "rgba(244,200,66,0.14)",
+    justifyContent: "center", alignItems: "center",
   },
-  continueButtonText: {
-    color: "#8B3A8B",
-    fontSize: 18,
-    fontWeight: "bold",
-    letterSpacing: 0.5,
+  readTermsTitle: { fontSize: 15, fontWeight: "700", color: C.goldSoft, marginBottom: 2 },
+  readTermsSub:   { fontSize: 12, color: C.dim },
+  readTermsArrow: { fontSize: 28, color: C.gold, fontWeight: "300" },
+  checkboxRow: {
+    flexDirection: "row", alignItems: "flex-start",
+    backgroundColor: C.glass, borderRadius: 14, padding: 14,
+    borderWidth: 1, borderColor: C.faint,
   },
-  buttonDisabled: {
-    opacity: 0.7,
+  checkbox: {
+    width: 24, height: 24, borderRadius: 7,
+    borderWidth: 1.5, borderColor: C.faint,
+    backgroundColor: "transparent",
+    alignItems: "center", justifyContent: "center",
+    marginRight: 12, marginTop: 1,
   },
-  loadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+  checkboxChecked: { backgroundColor: C.gold, borderColor: C.gold },
+  checkboxLabel: { flex: 1, color: C.dim, fontSize: 13, lineHeight: 20 },
+  primaryBtn: {
+    borderRadius: 16, borderWidth: 1.5, borderColor: C.aurora,
+    overflow: "hidden", marginBottom: 24,
   },
-  loadingDot: {
-    color: "#8B3A8B",
-    fontSize: 24,
-    fontWeight: "bold",
-    marginHorizontal: 2,
-    opacity: 0.8,
+  primaryBtnInner: {
+    backgroundColor: "rgba(139,92,246,0.14)",
+    paddingVertical: 17, alignItems: "center",
   },
-  dividerContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 25,
+  primaryBtnText: { color: C.aurora, fontSize: 16, fontWeight: "700", letterSpacing: 0.4 },
+  btnDisabled: { opacity: 0.4 },
+  dots: { flexDirection: "row", gap: 4 },
+  dot:  { color: C.aurora, fontSize: 22, fontWeight: "bold" },
+  dividerRow: { flexDirection: "row", alignItems: "center", marginBottom: 20, gap: 10 },
+  dividerLine:  { flex: 1, height: 1, backgroundColor: C.inputBorder },
+  dividerLabel: { color: C.dim, fontSize: 12, letterSpacing: 0.3 },
+  googleBtn: {
+    borderRadius: 16, borderWidth: 1, borderColor: C.inputBorder, overflow: "hidden",
   },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.4)",
+  googleBtnInner: {
+    backgroundColor: C.glass, paddingVertical: 15,
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10,
   },
-  dividerText: {
-    color: "#FFFFFF",
-    paddingHorizontal: 15,
-    fontSize: 13,
-    fontWeight: "600",
-    letterSpacing: 1,
+  googleLetter:  { fontSize: 17, fontWeight: "800", color: "#4285F4" },
+  googleBtnText: { color: C.white, fontSize: 15, fontWeight: "600" },
+  footer: {
+    flexDirection: "row", justifyContent: "center", alignItems: "center",
+    gap: 8, marginBottom: 14,
   },
-  googleButton: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-    marginBottom: 25,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  socialButtonContent: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  googleIcon: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#4285F4",
-    marginRight: 12,
-  },
-  googleButtonText: {
-    color: "#333333",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  bottomContainer: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    marginTop: 10,
-    marginBottom: 20,
-  },
-  loginText: {
-    color: "rgba(255, 255, 255, 0.9)",
-    fontSize: 15,
-    marginRight: 6,
-  },
-  loginLink: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "bold",
-    textDecorationLine: "underline",
-  },
-  legalText: {
-    color: "rgba(255, 255, 255, 0.7)",
-    fontSize: 11,
-    textAlign: "center",
-    lineHeight: 16,
-    paddingHorizontal: 20,
+  footerText: { color: C.dim, fontSize: 14 },
+  footerLink: { color: C.goldSoft, fontSize: 14, fontWeight: "700" },
+  legal: {
+    color: C.dim, fontSize: 11, textAlign: "center",
+    opacity: 0.6, lineHeight: 16, paddingHorizontal: 16,
   },
 })
