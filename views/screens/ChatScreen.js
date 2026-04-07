@@ -32,9 +32,9 @@ const L = {
   purple:   "#8B3A8B",
   purpleL:  "#F3E5F5",
   // Star axes — same colours as HomeScreen
-  emotional:"#F472B6",   // rose
-  physical: "#8B5CF6",   // aurora violet
-  mental:   "#2DD4BF",   // teal
+  emotional:"#5b8fff",   // rose
+  physical: "#008000",   // aurora violet
+  mental:   "#F4C842",   // teal
   gold:     "#F4C842",
   goldSoft: "#FDE68A",
 }
@@ -119,7 +119,7 @@ function CompatCard({ compatibility }) {
       {/* Section header */}
       <View style={cc.sectionHeader}>
         <Star size={16} color={L.purple} fill={L.purple} />
-        <Text style={cc.sectionTitle}>Cosmic Compatibility</Text>
+        <Text style={cc.sectionTitle}>Compatibility</Text>
       </View>
 
       {/* Star rows */}
@@ -145,13 +145,7 @@ function CompatCard({ compatibility }) {
       <View style={cc.sep} />
 
       {/* Overall bar */}
-      <View style={cc.overallRow}>
-        <Text style={cc.overallLabel}>Overall Match</Text>
-        <Text style={[cc.overallPct, { color: L.purple }]}>{overall}%</Text>
-      </View>
-      <View style={cc.barTrack}>
-        <Animated.View style={[cc.barFill, { width: barWidth }]} />
-      </View>
+      
     </View>
   )
 }

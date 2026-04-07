@@ -26,7 +26,7 @@ export default function SupportScreen({ navigation }) {
   }
 
   const handleEmailSupport = () => {
-    const email = 'codeninjaacademy@gmail.com'
+    const email = 'syniapp.team@gmail.com'
     const subject = 'Support Request'
     const mailUrl = `mailto:${email}?subject=${encodeURIComponent(subject)}`
     
@@ -64,7 +64,7 @@ export default function SupportScreen({ navigation }) {
         {/* Hero Section */}
         <View style={styles.heroSection}>
           <Text style={styles.heroTitle}>
-            A modern way to explore human resonance, inspired by ancient skies
+            A modern way to explore human resonance
           </Text>
         </View>
 
@@ -73,16 +73,13 @@ export default function SupportScreen({ navigation }) {
           <Text style={styles.sectionTitle}>About This App</Text>
           <View style={styles.card}>
             <Text style={styles.bodyText}>
-              Since ancient times, people across cultures have looked to the sky not to control life, but to understand it. Both Eastern and Western traditions developed symbolic systems to read cycles, patterns, and relationships — using the movement of the heavens as a language for human connection.
+              Since ancient times, people across cultures have looked to the sky to understand life. Both Eastern and Western traditions developed symbolic systems to read cycles, patterns, and relationships — using the movement of the heavens as a language for human connection.
             </Text>
             <Text style={styles.bodyText}>
-              This app grows out of that shared intuition.
+              This app grows out of that shared intuition to explore how two people may resonate with one another.
             </Text>
             <Text style={styles.bodyText}>
-              It doesn't belong to one tradition, and it doesn't claim to reveal destiny. Instead, it translates ancient symbolic ideas into a modern framework designed to explore how two people may resonate with one another.
-            </Text>
-            <Text style={styles.bodyText}>
-              At its core, the app looks at relationships through three intertwined lenses: emotional tone, physical energy, and mental rhythm. These dimensions are not treated as fixed labels, but as dynamic tendencies — ways in which two individuals might naturally flow, challenge each other, or find balance.
+              At its core, the app looks at relationships through three intertwined lenses: emotional, physical and mental resonance. We explore ways in which two individuals might naturally feel together, challenge each other, or find balance.
             </Text>
             <Text style={styles.bodyText}>
               The results are intentionally simple to read, yet open enough to invite reflection rather than conclusions. No matches are labeled as perfect or impossible. No outcomes are promised.
@@ -101,25 +98,24 @@ export default function SupportScreen({ navigation }) {
               Each match in the app is described through three independent scores, reflecting different aspects of relational compatibility. Rather than reducing a connection to a single number, the app invites you to look at how a relationship may unfold on multiple levels.
             </Text>
             <Text style={styles.bodyText}>
-              The three scores represent{" "}
-              
+              The three scores represent resonance at a different level:
+            </Text>
+            <Text style={styles.bodyText}>
               <Text style={styles.term}>
-                emotional resonance{" "}
+                emotional (feelings){" "}
                 <Text style={styles.greenStar}>★</Text>
               </Text>
-              ,{" "}
-              
+              {", "}
               <Text style={styles.term}>
-                physical energy{" "}
+                physical (attraction){" "}
                 <Text style={styles.blueStar}>★</Text>
               </Text>
-              , and{" "}
-              
+              {", and "}
               <Text style={styles.term}>
-                potential dynamics{" "}
+                mental (view of life){" "}
                 <Text style={styles.yellowStar}>★</Text>
               </Text>
-              . Together, they offer a balanced snapshot of potential dynamics — without claiming to define the relationship itself.
+              {". Together, they offer a balanced snapshot of potential dynamics — without claiming to define the relationship itself."}
             </Text>
             <Text style={styles.bodyText}>
               As you scroll, the app continuously presents new potential matches, organized by overall compatibility quality. Matches are gently grouped into three intuitive categories:
@@ -184,7 +180,7 @@ export default function SupportScreen({ navigation }) {
                 <Mail size={20} color="#2196F3" />
                 <View style={styles.emailTextContainer}>
                   <Text style={styles.emailButtonTitle}>Contact Support</Text>
-                  <Text style={styles.emailButtonSubtitle}>codeninjaacademy@gmail.com</Text>
+                  <Text style={styles.emailButtonSubtitle}>syniapp.team@gmail.com</Text>
                 </View>
                 <ExternalLink size={18} color="#2196F3" />
               </View>
@@ -401,21 +397,18 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   greenStar: {
-  color: "green",
-  fontWeight: "bold",
-},
-
-blueStar: {
-  color: "#5b8fff",
-  fontWeight: "bold",
-},
-
-yellowStar: {
-  color: "#FFD700", // jaune doré plus élégant
-  fontWeight: "bold",
-},
-
-term: {
-  fontWeight: "600",
-},
+    color: "green",
+    fontWeight: "bold",
+  },
+  blueStar: {
+    color: "#5b8fff",
+    fontWeight: "bold",
+  },
+  yellowStar: {
+    color: "#FFD700",
+    fontWeight: "bold",
+  },
+  term: {
+    fontWeight: "600",
+  },
 })

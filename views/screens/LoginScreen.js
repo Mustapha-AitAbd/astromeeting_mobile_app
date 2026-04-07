@@ -111,7 +111,8 @@ const gi = StyleSheet.create({
 })
 
 export default function LoginScreen({ navigation }) {
-  const { login } = useContext(AuthContext)
+  const { login, loginWithToken } = useContext(AuthContext)
+
 
   const [email,             setEmail]             = useState("")
   const [password,          setPassword]          = useState("")
@@ -138,21 +139,20 @@ export default function LoginScreen({ navigation }) {
 
   // ✅ Hook Google — remplace tout l'ancien code Google OAuth
   const { signInWithGoogle, isLoading: googleLoading } = useGoogleAuth({
-    onNewUser: (data) => {
-      // Profil incomplet → compléter l'inscription
-      navigation.navigate("RegisterStep3", {
-        email:              data.user.email,
-        password:           null,
-        registrationMethod: "google",
-        userId:             data.user.id,
-        token:              data.token,
-        user:               data.user,
-        fromGoogle:         true,
-      })
+onNewUser: (data) => {
+  navigation.navigate("RegisterStep3", {
+    email:              data.user.email,
+    password:           null,
+    registrationMethod: "google",
+    userId:             data.user.id,
+    token:              data.token,
+    user:               data.user,
+    fromGoogle:         true,
+  })
     },
-    onExistingUser: (data) => {
-      // Utilisateur existant → Home directement
-      navigation.replace("Home", { user: data.user, token: data.token })
+    onExistingUser: async (data) => {
+      await loginWithToken(data.token)  // ← sauvegarde token + met isAuthenticated = true
+      navigation.replace("Home")        // ← plus besoin de passer user/token en params
     },
     onError: (msg) => setError(msg),
   })

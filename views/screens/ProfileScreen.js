@@ -11,6 +11,7 @@ import {
   Alert,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from "react-native"
 import {
   Settings,
@@ -26,13 +27,27 @@ import {
 } from "lucide-react-native"
 import * as ImagePicker from "expo-image-picker"
 import { AuthContext } from "../../context/AuthContext"
-import { Share2, Link, Globe } from "lucide-react-native";
+import { Share2, Link, Globe } from "lucide-react-native"
+
+// ✅ FIX: Import useSafeAreaInsets to read real OS insets at runtime
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 const { width } = Dimensions.get("window")
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL
 
 export default function ProfileScreen({ navigation }) {
   const { token, logout } = useContext(AuthContext)
+
+  // ✅ FIX: Read real safe area insets from the OS
+  // - insets.top    → notch / status bar height (varies per device)
+  // - insets.bottom → home indicator / 3-button nav / gesture bar height
+  const insets = useSafeAreaInsets()
+
+  // ✅ FIX: Compute dynamic bottom nav height once
+  // Math.max ensures a minimum comfortable tap zone even on devices
+  // reporting insets.bottom = 0 (e.g. older Android with gesture nav)
+  const bottomInset   = Math.max(insets.bottom, 16)
+  const NAV_BAR_HEIGHT = 56 + bottomInset  // 56 = icon row height
 
   const [activeTab, setActiveTab] = useState("profile")
   const [selectedPhoto, setSelectedPhoto] = useState(null)
@@ -42,7 +57,7 @@ export default function ProfileScreen({ navigation }) {
   const [uploading, setUploading] = useState(false)
 
   const [userData, setUserData] = useState(null)
-  const [photo, setPhoto] = useState(null)        // The one uploaded photo object (or null)
+  const [photo, setPhoto] = useState(null)
   const [mainPhoto, setMainPhoto] = useState(null)
   const [isPremiumUser, setIsPremiumUser] = useState(false)
 
@@ -73,7 +88,6 @@ export default function ProfileScreen({ navigation }) {
       setLoading(true)
       if (!token) { setLoading(false); return }
 
-      // User profile
       const userResponse = await fetch(`${API_BASE_URL}/api/users/me`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -88,7 +102,6 @@ export default function ProfileScreen({ navigation }) {
         setIsPremiumUser(sub?.plan === "premium" && sub?.active === true)
       }
 
-      // Photos — single-photo policy: take only the first one
       const photosResponse = await fetch(`${API_BASE_URL}/api/users/photos`, {
         headers: { Authorization: `Bearer ${token}` },
       })
@@ -130,16 +143,6 @@ export default function ProfileScreen({ navigation }) {
 
   // ─── Image picking ────────────────────────────────────────────────────────────
 
-  /**
-   * Open the native image picker (camera or gallery).
-   *
-   * Flow:
-   *   1. User selects an image.
-   *   2. If an existing photo is present, it is deleted silently first.
-   *   3. The new image is uploaded and automatically set as the main profile photo.
-   *
-   * No secondary "Set as Main" step is required from the user.
-   */
   const pickImage = async (useCamera = false) => {
     try {
       const result = useCamera
@@ -157,11 +160,9 @@ export default function ProfileScreen({ navigation }) {
           })
 
       if (!result.canceled && result.assets[0]) {
-        // Silently remove the existing photo before uploading the replacement
         if (photo) {
           await confirmDeletePhoto(photo._id, /* silent */ true)
         }
-        // Upload and mark as main automatically
         await uploadPhoto(result.assets[0].uri)
       }
     } catch (error) {
@@ -169,9 +170,6 @@ export default function ProfileScreen({ navigation }) {
     }
   }
 
-  /**
-   * Show picker source options. Title adapts to context (add vs. update).
-   */
   const showImagePickerOptions = () => {
     Alert.alert(
       photo ? "Update Profile Photo" : "Add Profile Photo",
@@ -186,11 +184,6 @@ export default function ProfileScreen({ navigation }) {
 
   // ─── Upload ───────────────────────────────────────────────────────────────────
 
-  /**
-   * Upload the profile photo.
-   * setAsMain is always true — the uploaded image becomes the profile picture immediately.
-   * @param {string} imageUri - Local URI of the image.
-   */
   const uploadPhoto = async (imageUri) => {
     try {
       setUploading(true)
@@ -202,7 +195,7 @@ export default function ProfileScreen({ navigation }) {
 
       const formData = new FormData()
       formData.append("photo", { uri: imageUri, name: filename, type })
-      formData.append("setAsMain", "true") // Always set as main — no user prompt needed
+      formData.append("setAsMain", "true")
 
       const response = await fetch(`${API_BASE_URL}/api/users/photos`, {
         method: "POST",
@@ -232,7 +225,6 @@ export default function ProfileScreen({ navigation }) {
 
   // ─── Delete ───────────────────────────────────────────────────────────────────
 
-  /** Prompt the user before deleting their profile photo. */
   const deletePhoto = () => {
     if (!photo) return
     Alert.alert(
@@ -245,11 +237,6 @@ export default function ProfileScreen({ navigation }) {
     )
   }
 
-  /**
-   * Execute the photo deletion API call.
-   * @param {string} photoId  - The photo document ID.
-   * @param {boolean} silent  - Suppresses the success alert when true (used in replace flow).
-   */
   const confirmDeletePhoto = async (photoId, silent = false) => {
     try {
       if (!token) { Alert.alert("Error", "Authentication required"); return }
@@ -266,7 +253,6 @@ export default function ProfileScreen({ navigation }) {
         Alert.alert("Success", "Photo deleted!")
         loadUserData()
       }
-      // In silent mode the caller (pickImage) handles loadUserData after uploadPhoto
     } catch (error) {
       if (!silent) Alert.alert("Error", "Failed to delete photo")
     }
@@ -291,25 +277,44 @@ export default function ProfileScreen({ navigation }) {
   return (
     <View style={styles.container}>
 
-      {/* ── Header ── */}
-      <View style={styles.header}>
+      {/*
+        ✅ FIX: Header uses dynamic paddingTop from real insets.
+        - iOS: insets.top covers the notch / Dynamic Island / status bar
+        - Android: insets.top covers the status bar height (varies 24–48dp)
+        Math.max guarantees a minimum so it never collapses on devices
+        that report insets.top = 0 unexpectedly.
+      */}
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, Platform.OS === "ios" ? 50 : 28) }]}>
         <Image source={require("../../assets/logo-2.png")} style={styles.tinderLogo} resizeMode="contain" />
         <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate("Settings")}>
           <Settings size={24} color="#666666" />
         </TouchableOpacity>
       </View>
 
+      {/*
+        ✅ FIX: ScrollView bottom padding = full nav bar height so the last
+        card/section is never hidden behind the floating bottom nav bar.
+        contentInset (iOS) ensures the scroll indicator also respects the bar.
+      */}
       <ScrollView
         style={styles.scrollView}
         showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#FF6B6B"]} />}
+        contentContainerStyle={{ paddingBottom: NAV_BAR_HEIGHT + 16 }}
+        contentInset={{ bottom: NAV_BAR_HEIGHT }}
+        scrollIndicatorInsets={{ bottom: NAV_BAR_HEIGHT }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            colors={["#FF6B6B"]}
+          />
+        }
       >
 
         {/* ── Profile header ── */}
         <View style={styles.profileSection}>
           <View style={styles.profileHeader}>
 
-            {/* Avatar with camera shortcut */}
             <View style={styles.profileImageContainer}>
               {mainPhoto ? (
                 <Image source={{ uri: mainPhoto.url }} style={styles.profileImage} resizeMode="cover" />
@@ -323,7 +328,6 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
             </View>
 
-            {/* Name + edit profile */}
             <View style={styles.profileDetails}>
               <View style={styles.nameRow}>
                 <Text style={styles.profileName}>
@@ -356,7 +360,6 @@ export default function ProfileScreen({ navigation }) {
               </Text>
             </View>
 
-            {/* Show Add button only when no photo exists yet */}
             {!photo && (
               <TouchableOpacity
                 style={styles.addPhotoButton}
@@ -376,7 +379,6 @@ export default function ProfileScreen({ navigation }) {
           </View>
 
           {!photo ? (
-            /* ── Empty state ── */
             <View style={styles.emptyPhotos}>
               <Camera size={48} color="#CCCCCC" />
               <Text style={styles.emptyPhotosText}>No photo yet</Text>
@@ -396,10 +398,8 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           ) : (
-            /* ── Single photo card ── */
             <View style={styles.singlePhotoCard}>
 
-              {/* Photo preview — long-press to view full size */}
               <TouchableOpacity
                 style={styles.singlePhotoTouchable}
                 onLongPress={() => openPhoto(photo)}
@@ -407,7 +407,6 @@ export default function ProfileScreen({ navigation }) {
               >
                 <Image source={{ uri: photo.url }} style={styles.singlePhotoImage} resizeMode="cover" />
 
-                {/* Profile picture badge */}
                 {photo.isMain && (
                   <View style={styles.mainBadge}>
                     <CheckCircle size={12} color="#FFFFFF" fill="#FFFFFF" />
@@ -415,23 +414,12 @@ export default function ProfileScreen({ navigation }) {
                   </View>
                 )}
 
-                {/* Subtle long-press hint */}
                 <View style={styles.longPressHint}>
                   <Text style={styles.longPressHintText}>Hold to preview</Text>
                 </View>
               </TouchableOpacity>
 
-              {/* ── Action buttons ── */}
               <View style={styles.photoActions}>
-
-                {/*
-                  "Update Profile Photo"
-                  ─────────────────────
-                  Replaces the old "Main Photo" / "Set as Main" toggle.
-                  Tapping opens the image picker; the selected image is
-                  automatically saved as the main profile photo with no
-                  additional steps required from the user.
-                */}
                 <TouchableOpacity
                   style={[styles.actionButton, styles.actionButtonPrimary]}
                   onPress={showImagePickerOptions}
@@ -449,7 +437,6 @@ export default function ProfileScreen({ navigation }) {
                   )}
                 </TouchableOpacity>
 
-                {/* Delete */}
                 <TouchableOpacity
                   style={[styles.actionButton, styles.actionButtonDanger]}
                   onPress={deletePhoto}
@@ -460,7 +447,6 @@ export default function ProfileScreen({ navigation }) {
                     Delete
                   </Text>
                 </TouchableOpacity>
-
               </View>
 
               <Text style={styles.updateHint}>
@@ -472,15 +458,39 @@ export default function ProfileScreen({ navigation }) {
 
       </ScrollView>
 
-      {/* ── Bottom nav ── */}
-      <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={() => { setActiveTab("home"); navigation.navigate("Home") }}>
+      {/*
+        ✅ FIX: Bottom nav uses dynamic paddingBottom from real insets.
+
+        Device config          → insets.bottom  → result
+        ─────────────────────────────────────────────────────────────
+        Android 3-button nav   → ≈ 48–56 dp     → bar floats above buttons
+        Android 2-button nav   → ≈ 32 dp        → correct clearance
+        Android full gesture   → ≈ 0–16 dp      → Math.max(x, 16) applies
+        iOS with home bar      → 34 dp          → always correct
+        iOS without home bar   → 0              → Math.max(0, 16) = 16 dp
+
+        paddingTop: 12 is kept static — the icon row never changes height.
+        Only the bottom breathing room is dynamic.
+      */}
+      <View style={[styles.bottomNav, { paddingBottom: bottomInset }]}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => { setActiveTab("home"); navigation.navigate("Home") }}
+        >
           <Home size={28} color={activeTab === "home" ? "#FF6B6B" : "#CCCCCC"} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => { setActiveTab("messages"); navigation.navigate("Messages") }}>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => { setActiveTab("messages"); navigation.navigate("Messages") }}
+        >
           <Link size={28} color={activeTab === "messages" ? "#FF6B6B" : "#CCCCCC"} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.navItem} onPress={() => { setActiveTab("profile"); navigation.navigate("Profile") }}>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => { setActiveTab("profile"); navigation.navigate("Profile") }}
+        >
           <User size={28} color={activeTab === "profile" ? "#FF6B6B" : "#CCCCCC"} />
         </TouchableOpacity>
       </View>
@@ -488,7 +498,14 @@ export default function ProfileScreen({ navigation }) {
       {/* ── Full-screen photo modal ── */}
       <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={closeModal}>
         <View style={styles.modalContainer}>
-          <TouchableOpacity style={styles.closeButton} onPress={closeModal}>
+          {/*
+            ✅ FIX: Modal close button also respects the top inset so it's
+            never hidden under a notch or Dynamic Island.
+          */}
+          <TouchableOpacity
+            style={[styles.closeButton, { top: Math.max(insets.top + 8, 50) }]}
+            onPress={closeModal}
+          >
             <X size={32} color="#FFFFFF" />
           </TouchableOpacity>
           {selectedPhoto && (
@@ -512,21 +529,25 @@ const styles = StyleSheet.create({
   centered: { justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 12, fontSize: 16, color: "#666666" },
 
-  // Header
+  // ─── Header ───────────────────────────────────────────────
+  // ✅ paddingTop is applied dynamically in JSX via insets.top — removed here
+  // to prevent double-padding on different devices.
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingTop: 50,
     paddingBottom: 12,
     backgroundColor: "#FFFFFF",
   },
   tinderLogo: { width: 100, height: 30 },
   iconButton: { width: 40, height: 40, justifyContent: "center", alignItems: "center" },
+
+  // ─── Scroll ───────────────────────────────────────────────
+  // ✅ paddingBottom applied dynamically in JSX — no static value here.
   scrollView: { flex: 1 },
 
-  // Profile section
+  // ─── Profile section ──────────────────────────────────────
   profileSection: { padding: 16, backgroundColor: "#FFFFFF" },
   profileHeader: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
   profileImageContainer: { position: "relative", marginRight: 16 },
@@ -568,7 +589,7 @@ const styles = StyleSheet.create({
   },
   completeProfileText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
 
-  // Photos section
+  // ─── Photos section ───────────────────────────────────────
   photosSection: { backgroundColor: "#FAFAFA", padding: 16, marginTop: 16 },
   photosSectionHeader: {
     flexDirection: "row",
@@ -589,7 +610,7 @@ const styles = StyleSheet.create({
   },
   addPhotoButtonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "600" },
 
-  // Empty state
+  // ─── Empty state ──────────────────────────────────────────
   emptyPhotos: { alignItems: "center", justifyContent: "center", paddingVertical: 60 },
   emptyPhotosText: { fontSize: 18, fontWeight: "600", color: "#333333", marginTop: 16 },
   emptyPhotosHint: {
@@ -609,7 +630,7 @@ const styles = StyleSheet.create({
   },
   emptyAddButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
 
-  // Single photo card
+  // ─── Single photo card ────────────────────────────────────
   singlePhotoCard: { alignItems: "center" },
   singlePhotoTouchable: {
     width: width - 32,
@@ -643,7 +664,7 @@ const styles = StyleSheet.create({
   },
   longPressHintText: { color: "#FFFFFF", fontSize: 11 },
 
-  // Action buttons
+  // ─── Action buttons ───────────────────────────────────────
   photoActions: {
     flexDirection: "row",
     gap: 12,
@@ -665,16 +686,16 @@ const styles = StyleSheet.create({
   actionButtonTextLight: { color: "#FFFFFF" },
   updateHint: { marginTop: 10, fontSize: 12, color: "#AAAAAA", textAlign: "center" },
 
-  // Modal
+  // ─── Modal ────────────────────────────────────────────────
   modalContainer: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.95)",
     justifyContent: "center",
     alignItems: "center",
   },
+  // ✅ `top` is applied dynamically in JSX via insets.top — removed here
   closeButton: {
     position: "absolute",
-    top: 50,
     right: 20,
     zIndex: 10,
     width: 44,
@@ -686,18 +707,28 @@ const styles = StyleSheet.create({
   },
   fullScreenImage: { width: "100%", height: "80%" },
 
-  // Bottom nav
+  // ─── Bottom nav ───────────────────────────────────────────
+  // ✅ paddingBottom is applied dynamically in JSX via insets.bottom.
+  // Static values removed to prevent conflicts across device configurations:
+  //   ❌ was: paddingBottom: 40  (hardcoded, breaks on Android gesture nav)
+  //   ✅ now: paddingBottom set inline as Math.max(insets.bottom, 16)
   bottomNav: {
     position: "absolute",
-    bottom: 8,
+    bottom: 0,
     left: 0,
     right: 0,
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
-    paddingVertical: 12,
-    paddingBottom: 40,
+    paddingTop: 12,
+    // paddingBottom → set inline in JSX
     borderTopWidth: 1,
     borderTopColor: "#E0E0E0",
+    // Elevation/shadow so it visually separates from content on all themes
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 8,
   },
-  navItem: { flex: 1, alignItems: "center", justifyContent: "center" },
+  navItem: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 4 },
 })

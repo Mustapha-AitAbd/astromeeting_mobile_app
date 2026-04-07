@@ -1,147 +1,132 @@
-import React, { createContext, useState, useEffect } from 'react';
+import React, { createContext, useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { EXPO_PUBLIC_API_URL } from '@env';
 
-export const AuthContext = createContext();
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
+
+// ✅ FIX 1 : valeur par défaut complète — évite le crash useContext
+export const AuthContext = createContext({
+  isAuthenticated: false,
+  token: null,
+  user: null,
+  loading: true,
+  login: async () => ({ success: false }),
+  loginWithToken: async () => ({ success: false }),
+  logout: async () => {},
+  register: async () => ({ success: false }),
+});
 
 export const AuthProvider = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [token, setToken] = useState(null);
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [token, setToken]                     = useState(null);
+  const [user, setUser]                       = useState(null);
+  const [loading, setLoading]                 = useState(true);
 
-  // Charger le token au démarrage de l'app
-  useEffect(() => {
-    loadUserData();
+  // ── Clear session (sans appel API) ─────────────────────────
+  // ✅ FIX 2 : séparé de logout pour éviter la boucle infinie
+  const clearSession = useCallback(async () => {
+    await AsyncStorage.multiRemove(['token', 'userId', 'user']);
+    setToken(null);
+    setUser(null);
+    setIsAuthenticated(false);
   }, []);
 
-  // Charger les données utilisateur depuis AsyncStorage
-  const loadUserData = async () => {
-    try {
-      const storedToken = await AsyncStorage.getItem('token');
-      const storedUserId = await AsyncStorage.getItem('userId');
-      const storedUser = await AsyncStorage.getItem('user');
-
-      console.log('📱 Loading stored data...');
-      console.log('Token:', storedToken ? 'EXISTS' : 'NOT FOUND');
-      console.log('UserId:', storedUserId);
-
-      if (storedToken) {
-        setToken(storedToken);
-        
-        // Si on a le userId, on est authentifié
-        if (storedUserId) {
-          setIsAuthenticated(true);
-          
-          // Charger les infos user si disponibles
-          if (storedUser) {
-            setUser(JSON.parse(storedUser));
-          }
-          
-          // Récupérer les infos à jour depuis l'API
-          await fetchUserProfile(storedToken);
-        } else {
-          // On a le token mais pas le userId, il faut le récupérer
-          console.log('⚠️ Token found but no userId, fetching user profile...');
-          await fetchUserProfile(storedToken);
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error loading user data:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Récupérer le profil utilisateur depuis l'API
-  const fetchUserProfile = async (authToken) => {
+  // ── Fetch profile ───────────────────────────────────────────
+  const fetchUserProfile = useCallback(async (authToken) => {
     try {
       console.log('🔍 Fetching user profile...');
-      const response = await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/me`, {
+      const response = await fetch(`${API_BASE_URL}/api/auth/me`, {
         method: 'GET',
         headers: {
-          'Authorization': `Bearer ${authToken}`,
+          Authorization: `Bearer ${authToken}`,
           'Content-Type': 'application/json',
         },
       });
 
       if (response.ok) {
         const userData = await response.json();
-        console.log('✅ User profile fetched:', userData);
-        
-        // Sauvegarder les données utilisateur
         await AsyncStorage.setItem('userId', userData._id);
         await AsyncStorage.setItem('user', JSON.stringify(userData));
-        
         setUser(userData);
         setIsAuthenticated(true);
-        
-        console.log('✅ UserId saved:', userData._id);
+        console.log('✅ User profile fetched:', userData._id);
       } else {
-        console.error('❌ Failed to fetch user profile:', response.status);
-        // Token invalide, déconnecter
-        await logout();
+        // ✅ FIX 3 : on appelle clearSession et non logout
+        // pour éviter la boucle infinie fetch → erreur → logout → fetch
+        console.warn('❌ Token invalide, clearing session...');
+        await clearSession();
       }
     } catch (error) {
-      console.error('❌ Error fetching user profile:', error);
+      // Erreur réseau : on ne déconnecte pas, le token peut être valide
+      console.warn('⚠️ Network error fetching profile (keeping session):', error.message);
     }
-  };
+  }, [clearSession]);
 
-  // ---- LOGIN WITH EMAIL/PASSWORD ----
+  // ── Load session au démarrage ───────────────────────────────
+  useEffect(() => {
+    const loadUserData = async () => {
+      try {
+        const storedToken  = await AsyncStorage.getItem('token');
+        const storedUserId = await AsyncStorage.getItem('userId');
+        const storedUser   = await AsyncStorage.getItem('user');
+
+        console.log('📱 Token:', storedToken ? 'EXISTS' : 'NOT FOUND');
+
+        if (storedToken) {
+          setToken(storedToken);
+
+          if (storedUserId) {
+            setIsAuthenticated(true);
+            if (storedUser) setUser(JSON.parse(storedUser));
+          }
+
+          // Rafraîchit le profil en arrière-plan
+          await fetchUserProfile(storedToken);
+        }
+      } catch (error) {
+        console.error('❌ Error loading user data:', error);
+      } finally {
+        // ✅ FIX 4 : TOUJOURS appelé — débloque le loading
+        setLoading(false);
+      }
+    };
+
+    loadUserData();
+  }, [fetchUserProfile]);
+
+  // ── Login ───────────────────────────────────────────────────
   const login = async (email, password) => {
-    console.log('🔹 Attempting to connect with:', email);
-
     try {
-      const response = await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/login`, {
+      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          "ngrok-skip-browser-warning": "true"
-         },
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify({ email, password }),
       });
 
-      console.log('🔹 Status HTTP:', response.status);
       const data = await response.json();
-      console.log('🔹 Backend response:', data);
 
       if (response.ok) {
-        // Sauvegarder le token
         await AsyncStorage.setItem('token', data.token);
         setToken(data.token);
-        
-        console.log('✅ Token saved, fetching user profile...');
-        
-        // Récupérer le profil utilisateur
         await fetchUserProfile(data.token);
-        
-        console.log('✅ Authentication successful!');
         return { success: true };
-      } else {
-        console.warn('⚠️ Login failed:', data.message || 'Invalid credentials');
-        return { success: false, message: data.message || 'Invalid credentials' };
       }
+
+      return { success: false, message: data.message || 'Invalid credentials' };
     } catch (error) {
       console.error('🔥 Network error:', error);
       return { success: false, message: 'Server connection error' };
     }
   };
 
-  // ✅ NOUVELLE FONCTION - LOGIN WITH EXISTING TOKEN
+  // ── Login with token ────────────────────────────────────────
   const loginWithToken = async (authToken) => {
-    console.log('🔹 Logging in with existing token...');
-
     try {
-      // Sauvegarder le token
       await AsyncStorage.setItem('token', authToken);
       setToken(authToken);
-      
-      console.log('✅ Token saved, fetching user profile...');
-      
-      // Récupérer le profil utilisateur
       await fetchUserProfile(authToken);
-      
-      console.log('✅ Authentication with token successful!');
       return { success: true };
     } catch (error) {
       console.error('🔥 Error logging in with token:', error);
@@ -149,61 +134,45 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // ---- LOGOUT ----
+  // ── Logout ──────────────────────────────────────────────────
   const logout = async () => {
     try {
       if (token) {
-        await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/logout`, {
+        await fetch(`${API_BASE_URL}/api/auth/logout`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
       }
     } catch (err) {
-      console.error('Logout failed:', err);
+      console.warn('Logout API call failed (continuing anyway):', err.message);
     } finally {
-      // Nettoyer tout AsyncStorage
-      await AsyncStorage.removeItem('token');
-      await AsyncStorage.removeItem('userId');
-      await AsyncStorage.removeItem('user');
-      
-      setToken(null);
-      setUser(null);
-      setIsAuthenticated(false);
-      
+      await clearSession();
       console.log('✅ Logged out successfully');
     }
   };
 
-  // ---- REGISTER ----
+  // ── Register ────────────────────────────────────────────────
   const register = async (userData) => {
-    console.log('🔹 Attempting to register...');
-
     try {
-      const response = await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/register`, {
+      const response = await fetch(`${API_BASE_URL}/api/auth/register`, {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
-          "ngrok-skip-browser-warning": "true"
-         },
+          'ngrok-skip-browser-warning': 'true',
+        },
         body: JSON.stringify(userData),
       });
 
       const data = await response.json();
-      console.log('🔹 Registration response:', data);
 
-      if (response.ok) {
-        // Après l'inscription, connecter automatiquement
-        if (data.token) {
-          await AsyncStorage.setItem('token', data.token);
-          setToken(data.token);
-          await fetchUserProfile(data.token);
-          console.log('✅ Registration successful!');
-          return { success: true };
-        }
-      } else {
-        console.warn('⚠️ Registration failed:', data.message);
-        return { success: false, message: data.message || 'Registration failed' };
+      if (response.ok && data.token) {
+        await AsyncStorage.setItem('token', data.token);
+        setToken(data.token);
+        await fetchUserProfile(data.token);
+        return { success: true };
       }
+
+      return { success: false, message: data.message || 'Registration failed' };
     } catch (error) {
       console.error('🔥 Registration error:', error);
       return { success: false, message: 'Server connection error' };
@@ -211,15 +180,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ 
-      isAuthenticated, 
-      login,
-      loginWithToken, // ✅ Ajouter cette nouvelle fonction
-      logout, 
-      register,
+    <AuthContext.Provider value={{
+      isAuthenticated,
       token,
       user,
       loading,
+      login,
+      loginWithToken,
+      logout,
+      register,
     }}>
       {children}
     </AuthContext.Provider>

@@ -9,12 +9,16 @@ import {
   TextInput,
   ActivityIndicator,
   RefreshControl,
+  Platform,
 } from "react-native"
 import { Search, User, Home, Users, ChevronRight, MessageCircle } from "lucide-react-native"
 import { Link } from "lucide-react-native"
 import { useFocusEffect } from "@react-navigation/native"
 import { AuthContext } from "../../context/AuthContext"
 import axios from "axios"
+
+// ✅ FIX: Import useSafeAreaInsets to read real OS insets at runtime
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 export default function MessagesScreen({ navigation }) {
   const [activeTab, setActiveTab]     = useState("messages")
@@ -26,6 +30,23 @@ export default function MessagesScreen({ navigation }) {
   const { user, token } = useContext(AuthContext)
   const currentUserId   = user?._id
   const API_BASE_URL    = process.env.EXPO_PUBLIC_API_URL
+
+  // ✅ FIX: Read real safe area insets from the OS
+  //
+  // insets.top    → status bar / notch / Dynamic Island height
+  // insets.bottom → home indicator / 3-button nav / gesture bar height
+  //
+  // These values are provided by the native layer and are always accurate,
+  // unlike hardcoded Platform checks which cannot know the device config.
+  const insets = useSafeAreaInsets()
+
+  // ✅ FIX: Derive nav bar height once, used in both the nav bar style
+  // and the scroll content padding so nothing is ever hidden.
+  //
+  // Math.max(..., 16) guarantees a comfortable minimum tap zone on
+  // devices that report insets.bottom = 0 (e.g. older Android gesture nav).
+  const bottomInset    = Math.max(insets.bottom, 16)
+  const NAV_BAR_HEIGHT = 56 + bottomInset  // 56 = icon row height (paddingTop 12 + icon 28 + paddingBottom ~16)
 
   useFocusEffect(
     useCallback(() => {
@@ -117,8 +138,13 @@ export default function MessagesScreen({ navigation }) {
   return (
     <View style={styles.container}>
 
-      {/* Header */}
-      <View style={styles.header}>
+      {/*
+        ✅ FIX: Header uses dynamic paddingTop from real OS insets.
+        - iOS:     insets.top covers notch / Dynamic Island / status bar
+        - Android: insets.top covers the status bar (varies 24–48 dp per OEM)
+        Math.max guarantees a safe minimum on devices that report 0 unexpectedly.
+      */}
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, Platform.OS === "ios" ? 54 : 28) }]}>
         <View>
           <Text style={styles.headerTitle}>Friends</Text>
           <Text style={styles.headerSubtitle}>
@@ -144,11 +170,21 @@ export default function MessagesScreen({ navigation }) {
         </View>
       </View>
 
-      {/* List */}
+      {/*
+        ✅ FIX: ScrollView bottom padding = full nav bar height so the last
+        friend row is never hidden behind the floating bottom nav bar.
+
+        Two props work together:
+          • contentContainerStyle paddingBottom → Android + iOS layout space
+          • contentInset bottom                → iOS: shifts visible area up
+          • scrollIndicatorInsets bottom       → iOS: keeps scroll indicator visible
+      */}
       <ScrollView
         style={styles.scroll}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: NAV_BAR_HEIGHT + 16 }]}
+        contentInset={{ bottom: NAV_BAR_HEIGHT }}
+        scrollIndicatorInsets={{ bottom: NAV_BAR_HEIGHT }}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -189,7 +225,9 @@ export default function MessagesScreen({ navigation }) {
                 <View style={styles.friendInfo}>
                   <Text style={styles.friendName}>{name}</Text>
                   <Text style={styles.friendSub}>
-                    {friend.city ? `${friend.city}${friend.country ? ", " + friend.country : ""}` : "Tap to view profile"}
+                    {friend.city
+                      ? `${friend.city}${friend.country ? ", " + friend.country : ""}`
+                      : "Tap to view profile"}
                   </Text>
                 </View>
 
@@ -215,20 +253,35 @@ export default function MessagesScreen({ navigation }) {
         )}
       </ScrollView>
 
-      {/* Bottom Nav */}
-      <View style={styles.bottomNav}>
+      {/*
+        ✅ FIX: Bottom nav uses dynamic paddingBottom from real OS insets.
+
+        Device config            insets.bottom   Result
+        ──────────────────────────────────────────────────────────────
+        Android 3-button nav  →  ≈ 48–56 dp   →  bar floats above buttons ✓
+        Android 2-button nav  →  ≈ 32 dp      →  correct clearance ✓
+        Android full gesture  →  ≈ 0–16 dp    →  Math.max(...,16) kicks in ✓
+        iOS with home bar     →  34 dp        →  always correct ✓
+        iOS without home bar  →  0            →  Math.max(0,16) = 16 dp ✓
+
+        ❌ Old code: paddingBottom: 28  (hardcoded — wrong on most Android)
+        ✅ New code: paddingBottom: bottomInset  (real value from the OS)
+      */}
+      <View style={[styles.bottomNav, { paddingBottom: bottomInset }]}>
         <TouchableOpacity
           style={styles.navItem}
           onPress={() => { setActiveTab("home"); navigation.navigate("Home") }}
         >
           <Home size={26} color={activeTab === "home" ? "#FF6B6B" : "#CCC"} />
         </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.navItem}
           onPress={() => { setActiveTab("messages"); navigation.navigate("Messages") }}
         >
           <Link size={26} color={activeTab === "messages" ? "#FF6B6B" : "#CCC"} />
         </TouchableOpacity>
+
         <TouchableOpacity
           style={styles.navItem}
           onPress={() => { setActiveTab("profile"); navigation.navigate("Profile") }}
@@ -236,6 +289,7 @@ export default function MessagesScreen({ navigation }) {
           <User size={26} color={activeTab === "profile" ? "#FF6B6B" : "#CCC"} />
         </TouchableOpacity>
       </View>
+
     </View>
   )
 }
@@ -245,13 +299,14 @@ const styles = StyleSheet.create({
   center:    { justifyContent: "center", alignItems: "center" },
   loadingText: { marginTop: 10, fontSize: 14, color: "#888" },
 
-  // Header
+  // ─── Header ───────────────────────────────────────────────
+  // ✅ paddingTop applied dynamically in JSX via insets.top — removed here
+  // to prevent double-padding across different device configurations.
   header: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end",
     paddingHorizontal: 20,
-    paddingTop: 58,
     paddingBottom: 14,
     backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
@@ -265,7 +320,7 @@ const styles = StyleSheet.create({
     justifyContent: "center", alignItems: "center",
   },
 
-  // Search
+  // ─── Search ───────────────────────────────────────────────
   searchWrapper: {
     paddingHorizontal: 16, paddingVertical: 10,
     backgroundColor: "#FFFFFF",
@@ -280,11 +335,13 @@ const styles = StyleSheet.create({
   },
   searchInput: { flex: 1, fontSize: 15, color: "#111" },
 
-  // Scroll
-  scroll:       { flex: 1 },
-  scrollContent: { paddingVertical: 8, paddingBottom: 100 },
+  // ─── Scroll ───────────────────────────────────────────────
+  // ✅ paddingBottom is now applied dynamically in JSX — removed static
+  // value here to avoid conflicts. NAV_BAR_HEIGHT + 16 is set inline.
+  scroll:        { flex: 1 },
+  scrollContent: { paddingVertical: 8 },
 
-  // Friend row
+  // ─── Friend row ───────────────────────────────────────────
   friendRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -302,7 +359,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // Avatar
+  // ─── Avatar ───────────────────────────────────────────────
   avatarWrap: { position: "relative" },
   avatar: { width: 52, height: 52, borderRadius: 26 },
   avatarFallback: {
@@ -317,12 +374,12 @@ const styles = StyleSheet.create({
     borderWidth: 2, borderColor: "#FFF",
   },
 
-  // Info
+  // ─── Info ─────────────────────────────────────────────────
   friendInfo: { flex: 1 },
   friendName: { fontSize: 15, fontWeight: "700", color: "#1A1A1A" },
   friendSub:  { fontSize: 13, color: "#999", marginTop: 2 },
 
-  // Empty state
+  // ─── Empty state ──────────────────────────────────────────
   emptyState: { alignItems: "center", marginTop: 80, paddingHorizontal: 40 },
   emptyTitle: { fontSize: 20, fontWeight: "700", color: "#BDBDBD", marginTop: 16, marginBottom: 8 },
   emptySub:   { fontSize: 14, color: "#CCC", textAlign: "center", lineHeight: 20, marginBottom: 28 },
@@ -333,13 +390,25 @@ const styles = StyleSheet.create({
   },
   discoverBtnText: { color: "#FFF", fontSize: 15, fontWeight: "700" },
 
-  // Bottom nav
+  // ─── Bottom nav ───────────────────────────────────────────
+  // ✅ paddingBottom applied dynamically in JSX via insets.bottom.
+  // Static value removed to prevent clipping on Android nav configurations:
+  //   ❌ was: paddingBottom: 28  (hardcoded — too small for 3-button nav,
+  //                               too large for gesture-only devices)
+  //   ✅ now: paddingBottom set inline as Math.max(insets.bottom, 16)
   bottomNav: {
     position: "absolute", bottom: 0, left: 0, right: 0,
     flexDirection: "row",
     backgroundColor: "#FFF",
-    paddingVertical: 12, paddingBottom: 28,
+    paddingTop: 12,
+    // paddingBottom → set inline in JSX
     borderTopWidth: 1, borderTopColor: "#EEE",
+    // Shadow ensures visual separation from scroll content on all themes
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 6,
+    elevation: 8,
   },
-  navItem: { flex: 1, alignItems: "center", justifyContent: "center" },
+  navItem: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 4 },
 })

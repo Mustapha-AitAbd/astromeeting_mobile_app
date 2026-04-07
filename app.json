@@ -41,10 +41,14 @@
           "autoVerify": true,
           "data": [
             {
-              "scheme": "com.mustapha01.syni"
+              "scheme": "com.mustapha01.syni",
+              "host": "oauth2redirect"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ]
     },

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react"
+import React, { useState, useEffect, useRef, useContext } from "react"
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   Image, KeyboardAvoidingView, Platform, ScrollView, Alert,
@@ -8,9 +8,16 @@ import { Ionicons } from "@expo/vector-icons"
 import AsyncStorage from "@react-native-async-storage/async-storage"
 import DisclaimerCard from "../../components/DisclaimerCard"
 import { useGoogleAuth } from "../../hooks/useGoogleAuth"
+import * as AuthSession from 'expo-auth-session'
+import { AuthContext } from "../../context/AuthContext"
 
 const { width, height } = Dimensions.get("window")
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL
+
+console.log('Redirect URI:', AuthSession.makeRedirectUri({
+  scheme: 'com.mustapha01.syni',
+  path: 'oauth2redirect',
+}))
 
 const C = {
   void:       "#07011A",
@@ -69,6 +76,7 @@ function GlassInput({ icon, hasError, children, style }) {
     </View>
   )
 }
+
 const gi = StyleSheet.create({
   wrap: {
     flexDirection: "row", alignItems: "center",
@@ -82,6 +90,9 @@ const gi = StyleSheet.create({
 })
 
 export default function RegisterStep1Screen({ navigation }) {
+  // ✅ useContext DANS le composant
+  const { loginWithToken } = useContext(AuthContext)
+
   const [email,             setEmail]             = useState("")
   const [password,          setPassword]          = useState("")
   const [confirmPassword,   setConfirmPassword]   = useState("")
@@ -109,10 +120,8 @@ export default function RegisterStep1Screen({ navigation }) {
     ).start()
   }, [])
 
-  // ✅ Hook Google — remplace tout l'ancien code Google OAuth
-  const { signInWithGoogle, isLoading: googleLoading, request } = useGoogleAuth({
+  const { signInWithGoogle, isLoading: googleLoading } = useGoogleAuth({
     onNewUser: (data) => {
-      // Nouvel utilisateur → compléter le profil, pas de vérification email
       navigation.replace("RegisterStep3", {
         email:              data.user.email,
         password:           null,
@@ -123,11 +132,11 @@ export default function RegisterStep1Screen({ navigation }) {
         fromGoogle:         true,
       })
     },
-    onExistingUser: (data) => {
-      // Utilisateur existant → directement Home
+    onExistingUser: async (data) => {
+      await loginWithToken(data.token)
       Alert.alert("Welcome back! 🎉", `Welcome back, ${data.user.name || "User"}!`, [{
         text: "Continue",
-        onPress: () => navigation.replace("Home", { user: data.user, token: data.token }),
+        onPress: () => navigation.replace("Home"),
       }])
     },
     onError: (msg) => setError(msg),
@@ -192,14 +201,13 @@ export default function RegisterStep1Screen({ navigation }) {
           }),
         }]
       )
-    } catch (error) {
+    } catch (err) {
       setError("Unable to connect to the server. Please check your internet connection.")
     } finally {
       setManualLoading(false)
     }
   }
 
-  // ✅ Bouton Google — juste vérifier disclaimer puis appeler le hook
   const handleGoogleRegister = async () => {
     if (!disclaimerAccepted) {
       setError("Please read and accept the Terms and Conditions to continue")
@@ -217,6 +225,8 @@ export default function RegisterStep1Screen({ navigation }) {
   const handleDeclineDisclaimer = () => setShowDisclaimerCard(false)
 
   const pulseScale = pulse.interpolate({ inputRange: [0, 1], outputRange: [0.96, 1.04] })
+
+  const ORB = 120
 
   return (
     <View style={s.container}>
@@ -346,7 +356,11 @@ export default function RegisterStep1Screen({ navigation }) {
             >
               <View style={s.primaryBtnInner}>
                 {manualLoading ? (
-                  <View style={s.dots}><Text style={s.dot}>•</Text><Text style={s.dot}>•</Text><Text style={s.dot}>•</Text></View>
+                  <View style={s.dots}>
+                    <Text style={s.dot}>•</Text>
+                    <Text style={s.dot}>•</Text>
+                    <Text style={s.dot}>•</Text>
+                  </View>
                 ) : (
                   <Text style={s.primaryBtnText}>Continue  →</Text>
                 )}
@@ -402,7 +416,6 @@ export default function RegisterStep1Screen({ navigation }) {
     </View>
   )
 }
-
 const ORB = 120
 
 const s = StyleSheet.create({

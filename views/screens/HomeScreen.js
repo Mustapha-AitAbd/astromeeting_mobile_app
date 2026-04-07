@@ -1,4 +1,5 @@
-import { useState, useEffect, useContext, useRef } from "react"
+// ✅ Ajouter React
+import React, { useState, useEffect, useContext, useRef } from "react"
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   Image, Alert, RefreshControl, ActivityIndicator, Dimensions, Animated, Platform
@@ -12,11 +13,12 @@ import { useNavigation } from "@react-navigation/native"
 import { AuthContext } from "../../context/AuthContext"
 import axios from "axios"
 import { Link } from "lucide-react-native"
-
+import { useSafeAreaInsets } from "react-native-safe-area-context"
+ 
 const { width, height } = Dimensions.get("window")
-
+ 
 // ─────────────────────────────────────────────────────────────
-//  DESIGN TOKENS  — Celestial Luxury (same as Onboarding + Login)
+//  DESIGN TOKENS  — Celestial Luxury
 // ─────────────────────────────────────────────────────────────
 const C = {
   void:       "#07011A",
@@ -35,7 +37,7 @@ const C = {
   border:     "rgba(255,255,255,0.12)",
   borderGold: "rgba(244,200,66,0.22)",
 }
-
+ 
 // ─────────────────────────────────────────────────────────────
 //  STAR FIELD
 // ─────────────────────────────────────────────────────────────
@@ -46,7 +48,7 @@ const STARS = Array.from({ length: 70 }, (_, i) => ({
   r: Math.random() * 1.8 + 0.3,
   o: Math.random() * 0.5 + 0.12,
 }))
-
+ 
 function StarField() {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -68,24 +70,26 @@ function StarField() {
     </View>
   )
 }
-
+ 
 // ─────────────────────────────────────────────────────────────
 //  MAIN SCREEN
 // ─────────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
   const nav = useNavigation()
+  const insets = useSafeAreaInsets()
+ 
   const [activeTab, setActiveTab] = useState("home")
   const [showSettingsMenu, setShowSettingsMenu] = useState(false)
   const { token, user: currentUser, logout } = useContext(AuthContext)
   const [user, setUser] = useState(null)
   const [loadingUser, setLoadingUser] = useState(true)
   const [isPremiumUser, setIsPremiumUser] = useState(false)
-
+ 
   const [highCompatibilityUsers,   setHighCompatibilityUsers]   = useState([])
   const [mediumCompatibilityUsers, setMediumCompatibilityUsers] = useState([])
   const [lowCompatibilityUsers,    setLowCompatibilityUsers]    = useState([])
   const [allDisplayUsers,          setAllDisplayUsers]          = useState([])
-
+ 
   const [loadingUsers,      setLoadingUsers]      = useState(false)
   const [refreshing,        setRefreshing]        = useState(false)
   const [pendingRequests,   setPendingRequests]   = useState([])
@@ -93,9 +97,12 @@ export default function HomeScreen({ navigation }) {
   const [notificationCount, setNotificationCount] = useState(0)
   const [mainPhoto,         setMainPhoto]         = useState(null)
   const [sentRequests,      setSentRequests]      = useState([])
-
+ 
   const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL
-
+ 
+  const bottomInset    = Math.max(insets.bottom, 14)
+  const NAV_BAR_HEIGHT = 56 + bottomInset
+ 
   // Avatar pulse animation
   const pulse = useRef(new Animated.Value(0)).current
   useEffect(() => {
@@ -106,7 +113,7 @@ export default function HomeScreen({ navigation }) {
       ])
     ).start()
   }, [])
-
+ 
   useEffect(() => {
     if (token) {
       fetchUser()
@@ -117,7 +124,7 @@ export default function HomeScreen({ navigation }) {
       fetchSentRequests()
     }
   }, [token])
-
+ 
   const onRefresh = async () => {
     setRefreshing(true)
     await Promise.all([
@@ -126,7 +133,7 @@ export default function HomeScreen({ navigation }) {
     ])
     setRefreshing(false)
   }
-
+ 
   const getDisplayName = (profile) => {
     const firstName = profile.firstName?.trim()
     const lastName  = profile.lastName?.trim()
@@ -134,7 +141,7 @@ export default function HomeScreen({ navigation }) {
     if (profile.name?.trim()) return profile.name.trim()
     return "User"
   }
-
+ 
   const fetchUser = async () => {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/auth/me`, {
@@ -150,10 +157,10 @@ export default function HomeScreen({ navigation }) {
       setLoadingUser(false)
     }
   }
-
+ 
   const fetchUserPhotos = async () => {
     try {
-      const response  = await fetch(`${API_BASE_URL}/api/users/photos`, {
+      const response   = await fetch(`${API_BASE_URL}/api/users/photos`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       const photosData = await response.json()
@@ -162,7 +169,7 @@ export default function HomeScreen({ navigation }) {
       console.error("Error fetching user photos:", error)
     }
   }
-
+ 
   const fetchCompatibilityUsers = async () => {
     setLoadingUsers(true)
     try {
@@ -174,9 +181,9 @@ export default function HomeScreen({ navigation }) {
         const high   = data.highCompatibilityList   || []
         const medium = data.mediumCompatibilityList || []
         const low    = data.lowCompatibilityList    || []
-
+ 
         console.log("📊 HIGH:", high.length, "MEDIUM:", medium.length, "LOW:", low.length)
-
+ 
         setHighCompatibilityUsers(high)
         setMediumCompatibilityUsers(medium)
         setLowCompatibilityUsers(low)
@@ -191,7 +198,7 @@ export default function HomeScreen({ navigation }) {
       setLoadingUsers(false)
     }
   }
-
+ 
   const fetchPendingRequests = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/friendship/requests/received`, {
@@ -204,7 +211,7 @@ export default function HomeScreen({ navigation }) {
       console.error("Error fetching pending requests:", error)
     }
   }
-
+ 
   const fetchFriends = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/friendship/friends`, {
@@ -215,18 +222,21 @@ export default function HomeScreen({ navigation }) {
       console.error("Error fetching friends:", error)
     }
   }
-
+ 
+  // ✅ FIX : l'API retourne un tableau direct de documents Friendship
+  // avec recipient populé : { _id, name, email, avatar }
   const fetchSentRequests = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/api/friendship/requests/sent`, {
         headers: { Authorization: `Bearer ${token}` },
       })
-      setSentRequests(await response.json())
+      const data = await response.json()
+      setSentRequests(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error("Error fetching sent requests:", error)
     }
   }
-
+ 
   const handleSendInvitation = async (recipientId) => {
     try {
       const recipientUser = allDisplayUsers.find(u => u.id === recipientId)
@@ -247,35 +257,61 @@ export default function HomeScreen({ navigation }) {
       Alert.alert("Error", "Failed to send invitation. Please check your connection.")
     }
   }
+ 
+const handleCancelInvitation = async (recipientId) => {
+  try {
+    const targetId = String(recipientId)
 
-  const handleCancelInvitation = async (recipientId) => {
-    try {
-      const sentRequest = sentRequests.find(
-        req => req.recipient._id === recipientId || req.recipient === recipientId
-      )
-      if (!sentRequest) { Alert.alert("Error", "Request not found"); return }
-      const recipientUser = allDisplayUsers.find(u => u.id === recipientId)
-      const recipientName = recipientUser ? getDisplayName(recipientUser) : "this user"
-      const response = await fetch(`${API_BASE_URL}/api/friendship/decline`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ friendshipId: sentRequest._id }),
-      })
-      const data = await response.json()
-      if (response.ok) {
-        await fetchSentRequests()
-        Alert.alert("🔄 Invitation Canceled", `Your invitation to ${recipientName} has been canceled.`, [{ text: "OK" }])
-      } else {
-        Alert.alert("Error", data.message || "Failed to cancel invitation")
+    const sentRequest = sentRequests.find((req) => {
+      if (req.recipient && typeof req.recipient === "object" && req.recipient._id) {
+        return String(req.recipient._id) === targetId
       }
-    } catch (error) {
-      Alert.alert("Error", "Failed to cancel invitation. Please try again.")
-    }
-  }
+      return String(req.recipient) === targetId
+    })
 
+    if (!sentRequest) {
+      Alert.alert("Error", "Request not found")
+      return
+    }
+
+    const friendshipId = String(sentRequest._id)
+    const recipientUser = allDisplayUsers.find((u) => String(u.id) === targetId)
+    const recipientName = recipientUser ? getDisplayName(recipientUser) : "this user"
+
+    const response = await fetch(`${API_BASE_URL}/api/friendship/decline`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ friendshipId }),
+    })
+
+    const data = await response.json()
+
+    if (response.ok) {
+      // Mise à jour immédiate → le bouton "Interested" réapparaît instantanément
+      setSentRequests(prev => prev.filter(req => String(req._id) !== friendshipId))
+
+      await fetchSentRequests()
+
+      Alert.alert(
+        "🔄 Invitation Canceled",
+        `Your invitation to ${recipientName} has been canceled.`,
+        [{ text: "OK" }]
+      )
+    } else {
+      Alert.alert("Error", data.message || "Failed to cancel invitation")
+    }
+  } catch (error) {
+    console.error("handleCancelInvitation error:", error)
+    Alert.alert("Error", "Failed to cancel invitation. Please check your connection.")
+  }
+}
+ 
   const handleUpgrade = () => navigation.navigate("Subscription")
   const handleLogout  = async () => { setShowSettingsMenu(false); await logout() }
-
+ 
   const calculateAge = (dob) => {
     if (!dob) return ""
     const today = new Date(), b = new Date(dob)
@@ -284,9 +320,9 @@ export default function HomeScreen({ navigation }) {
       (today.getMonth() === b.getMonth() && today.getDate() < b.getDate())) age--
     return age
   }
-
+ 
   const getDistance = () => `${Math.floor(Math.random() * 15) + 1} km`
-
+ 
   const getUserMainPhoto = (userProfile) => {
     if (userProfile.photos?.length > 0) {
       const main = userProfile.photos.find(p => p.isMain)
@@ -294,13 +330,18 @@ export default function HomeScreen({ navigation }) {
     }
     return null
   }
-
+ 
   const hasInvitationSent = (userId) =>
-    sentRequests.some(
-      req => (req.recipient._id === userId || req.recipient === userId) && req.status === "pending"
-    )
-
-  // ── Star rating (logic unchanged) ──
+    sentRequests.some((req) => {
+      // ✅ FIX : même logique normalisée que handleCancelInvitation
+      const targetId = String(userId)
+      if (req.recipient && typeof req.recipient === "object" && req.recipient._id) {
+        return String(req.recipient._id) === targetId && req.status === "pending"
+      }
+      return String(req.recipient) === targetId && req.status === "pending"
+    })
+ 
+  // ── Star rating ──
   const renderStatStars = (percentValue, color) => {
     const stars    = []
     const maxStars = 4
@@ -321,8 +362,8 @@ export default function HomeScreen({ navigation }) {
       stars.push(<Star key={`e${i}`} size={11} color="rgba(255,255,255,0.25)" fill="transparent" />)
     return stars
   }
-
-  // ── User card (all logic unchanged, new styles only) ──
+ 
+  // ── User card ──
   const renderUserCard = (compatibilityResult, index) => {
     const profile    = compatibilityResult
     const category   = compatibilityResult.category
@@ -331,7 +372,7 @@ export default function HomeScreen({ navigation }) {
     const isFriend       = friends.some(f => f._id === profile.id)
     const userPhoto      = getUserMainPhoto(profile)
     const invitationSent = hasInvitationSent(profile.id)
-
+ 
     return (
       <TouchableOpacity
         key={profile.id}
@@ -373,14 +414,14 @@ export default function HomeScreen({ navigation }) {
               </View>
             </View>
           )}
-
+ 
           {isHighCompatibilityLocked && (
             <View style={s.lockOverlay}>
               <View style={s.lockIconCircle}><Lock size={32} color={C.white} /></View>
               <Text style={s.lockText}>Premium Profile</Text>
             </View>
           )}
-
+ 
           {/* Stats chip */}
           <View style={s.topBadgesContainer}>
             <View style={s.statsChip}>
@@ -389,7 +430,7 @@ export default function HomeScreen({ navigation }) {
               <View style={s.statRow}><View style={s.starsContainer}>{renderStatStars(statistics.intesaMentalePercent  || 0, "#F4C842")}</View></View>
             </View>
           </View>
-
+ 
           {/* Name */}
           <View style={s.userInfoOverlay}>
             <View style={s.nameContainer}>
@@ -400,7 +441,7 @@ export default function HomeScreen({ navigation }) {
             </Text>
           </View>
         </View>
-
+ 
         {/* Actions */}
         <View style={s.actionsContainer}>
           {isFriend ? (
@@ -443,7 +484,7 @@ export default function HomeScreen({ navigation }) {
       </TouchableOpacity>
     )
   }
-
+ 
   // Loading
   if (loadingUser) {
     return (
@@ -455,7 +496,7 @@ export default function HomeScreen({ navigation }) {
       </View>
     )
   }
-
+ 
   // ─────────────────────────────────────────────
   //  RENDER
   // ─────────────────────────────────────────────
@@ -464,9 +505,8 @@ export default function HomeScreen({ navigation }) {
       <StarField />
       <View style={s.blobTop} />
       <View style={s.blobBottom} />
-
-      {/* HEADER */}
-      <View style={s.header}>
+ 
+      <View style={[s.header, { paddingTop: Math.max(insets.top, Platform.OS === "ios" ? 50 : 30) }]}>
         <Image source={require("../../assets/logo-3.png")} style={s.headerLogo} resizeMode="contain" />
         <View style={s.headerRight}>
           <TouchableOpacity style={s.iconButton} onPress={() => navigation.navigate("Settings")}>
@@ -482,19 +522,26 @@ export default function HomeScreen({ navigation }) {
           )}
         </View>
       </View>
-
+ 
       {showSettingsMenu && (
         <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setShowSettingsMenu(false)} />
       )}
-
-      {/* SCROLL */}
+ 
       <ScrollView
         style={s.scrollView}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={s.scrollContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.gold} colors={[C.gold]} />}
+        contentContainerStyle={[s.scrollContent, { paddingBottom: NAV_BAR_HEIGHT + 16 }]}
+        contentInset={{ bottom: NAV_BAR_HEIGHT }}
+        scrollIndicatorInsets={{ bottom: NAV_BAR_HEIGHT }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={C.gold}
+            colors={[C.gold]}
+          />
+        }
       >
-
         {/* PROFILE CARD */}
         <View style={s.profileCard}>
           <View style={s.profileHeader}>
@@ -530,7 +577,7 @@ export default function HomeScreen({ navigation }) {
             </TouchableOpacity>
           )}
         </View>
-
+ 
         {/* FEATURE TILES */}
         <View style={s.tilesRow}>
           <TouchableOpacity style={s.tile} onPress={() => navigation.navigate("Messages")}>
@@ -555,7 +602,7 @@ export default function HomeScreen({ navigation }) {
             </Text>
           </View>
         </View>
-
+ 
         {/* DISCOVER */}
         <View style={s.discoverSection}>
           <View style={s.discoverHeader}>
@@ -572,7 +619,7 @@ export default function HomeScreen({ navigation }) {
               <RefreshCw size={18} color={C.white} />
             </TouchableOpacity>
           </View>
-
+ 
           {loadingUsers ? (
             <View style={s.loadingContainer}>
               <ActivityIndicator size="large" color={C.gold} />
@@ -582,21 +629,29 @@ export default function HomeScreen({ navigation }) {
             allDisplayUsers.map((result, index) => renderUserCard(result, index))
           )}
         </View>
-
-        <View style={{ height: 110 }} />
       </ScrollView>
-
-      {/* BOTTOM NAV */}
-      <View style={s.bottomNav}>
-        <TouchableOpacity style={s.navItem} onPress={() => { setActiveTab("home"); navigation.navigate("Home") }}>
+ 
+      <View style={[s.bottomNav, { paddingBottom: bottomInset }]}>
+        <TouchableOpacity
+          style={s.navItem}
+          onPress={() => { setActiveTab("home"); navigation.navigate("Home") }}
+        >
           <Home size={26} color={activeTab === "home" ? C.gold : C.dim} />
           {activeTab === "home" && <View style={s.navDot} />}
         </TouchableOpacity>
-        <TouchableOpacity style={s.navItem} onPress={() => { setActiveTab("messages"); navigation.navigate("Messages") }}>
+ 
+        <TouchableOpacity
+          style={s.navItem}
+          onPress={() => { setActiveTab("messages"); navigation.navigate("Messages") }}
+        >
           <Link size={26} color={activeTab === "messages" ? C.gold : C.dim} />
           {activeTab === "messages" && <View style={s.navDot} />}
         </TouchableOpacity>
-        <TouchableOpacity style={s.navItem} onPress={() => { setActiveTab("profile"); navigation.navigate("Profile") }}>
+ 
+        <TouchableOpacity
+          style={s.navItem}
+          onPress={() => { setActiveTab("profile"); navigation.navigate("Profile") }}
+        >
           <User size={26} color={activeTab === "profile" ? C.gold : C.dim} />
           {activeTab === "profile" && <View style={s.navDot} />}
         </TouchableOpacity>
@@ -627,11 +682,12 @@ const s = StyleSheet.create({
   },
   loadingText: { color: C.dim, fontSize: 14, marginTop: 12, letterSpacing: 0.3 },
 
-  // Header
+  // ─── Header ───────────────────────────────────────────────
+  // ✅ paddingTop is now applied dynamically in JSX via insets.top
+  // Only static values remain here
   header: {
     flexDirection: "row", justifyContent: "space-between", alignItems: "center",
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "ios" ? 56 : 36,
     paddingBottom: 14,
     backgroundColor: "rgba(7,1,26,0.97)",
     borderBottomWidth: 1, borderBottomColor: C.borderGold,
@@ -655,11 +711,13 @@ const s = StyleSheet.create({
   menuItem:     { flexDirection: "row", alignItems: "center", paddingVertical: 14, paddingHorizontal: 16, gap: 10 },
   menuItemText: { color: C.white, fontSize: 15, fontWeight: "500" },
 
-  // Scroll
+  // ─── Scroll ───────────────────────────────────────────────
   scrollView:   { flex: 1 },
+  // ✅ paddingBottom is now applied dynamically in JSX — no static value here
+  // to avoid double-padding on different devices
   scrollContent:{ paddingTop: 16 },
 
-  // Profile card
+  // ─── Profile card ─────────────────────────────────────────
   profileCard: {
     marginHorizontal: 16, marginBottom: 14,
     backgroundColor: C.cardBg,
@@ -707,7 +765,7 @@ const s = StyleSheet.create({
   },
   upgradeBtnText: { color: C.cosmos, fontSize: 15, fontWeight: "800", letterSpacing: 0.3 },
 
-  // Tiles
+  // ─── Tiles ────────────────────────────────────────────────
   tilesRow: { flexDirection: "row", paddingHorizontal: 16, gap: 10, marginBottom: 14 },
   tile: {
     flex: 1, backgroundColor: C.cardBg,
@@ -725,7 +783,7 @@ const s = StyleSheet.create({
   },
   notifBadgeText: { color: C.white, fontSize: 10, fontWeight: "800", paddingHorizontal: 3 },
 
-  // Discover
+  // ─── Discover ─────────────────────────────────────────────
   discoverSection: { paddingHorizontal: 16 },
   discoverHeader: {
     flexDirection: "row", justifyContent: "space-between",
@@ -744,7 +802,7 @@ const s = StyleSheet.create({
   },
   loadingContainer: { paddingVertical: 40, alignItems: "center", gap: 12 },
 
-  // Match cards
+  // ─── Match cards ──────────────────────────────────────────
   matchCard: {
     backgroundColor: C.cosmos, borderRadius: 28, marginBottom: 20,
     borderWidth: 1, borderColor: C.border, overflow: "hidden",
@@ -876,17 +934,19 @@ const s = StyleSheet.create({
   connectText:  { fontSize: 18, fontWeight: "800", color: C.white, flex: 1, letterSpacing: 0.3 },
   sparkleText:  { fontSize: 18 },
 
-  // Bottom nav
+  // ─── Bottom nav ───────────────────────────────────────────
+  // ✅ paddingBottom is now applied dynamically in JSX via insets.bottom
+  // Only static/structural values remain here
   bottomNav: {
     position: "absolute", bottom: 0, left: 0, right: 0,
     flexDirection: "row",
     backgroundColor: "rgba(7,1,26,0.97)",
-    paddingVertical: 12,
-    paddingBottom: Platform.OS === "ios" ? 32 : 14,
+    paddingTop: 12,
+    // paddingBottom is set inline: Math.max(insets.bottom, 14)
     borderTopWidth: 1, borderTopColor: C.borderGold,
     shadowColor: C.gold, shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.14, shadowRadius: 8, elevation: 10,
   },
-  navItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 4 },
+  navItem: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 4, gap: 4 },
   navDot:  { width: 4, height: 4, borderRadius: 2, backgroundColor: C.gold },
 })
