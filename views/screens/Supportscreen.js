@@ -14,7 +14,7 @@ import { LinearGradient } from 'expo-linear-gradient'
 
 export default function SupportScreen({ navigation }) {
   const handleDonatePress = () => {
-    const donationUrl = 'https://your-donation-link.com' // Replace with actual link
+    const donationUrl = 'https://www.paypal.com/paypalme/SyniApp' // Replace with actual link
     
     Linking.canOpenURL(donationUrl).then(supported => {
       if (supported) {
@@ -118,41 +118,11 @@ export default function SupportScreen({ navigation }) {
               {". Together, they offer a balanced snapshot of potential dynamics — without claiming to define the relationship itself."}
             </Text>
             <Text style={styles.bodyText}>
-              As you scroll, the app continuously presents new potential matches, organized by overall compatibility quality. Matches are gently grouped into three intuitive categories:
+              As you scroll, the app continuously presents new potential matches, organized by overall compatibility quality.
             </Text>
 
             {/* Categories */}
-            <View style={styles.categoryContainer}>
-              <View style={styles.categoryItem}>
-                <View style={[styles.categoryDot, styles.excellentDot]} />
-                <View style={styles.categoryTextContainer}>
-                  <Text style={styles.categoryTitle}>Green</Text>
-                  <Text style={styles.categoryDescription}>
-                    Where the three dimensions show strong and harmonious alignment
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.categoryItem}>
-                <View style={[styles.categoryDot, styles.goodDot]} />
-                <View style={styles.categoryTextContainer}>
-                  <Text style={styles.categoryTitle}>Blue</Text>
-                  <Text style={styles.categoryDescription}>
-                    Where compatibility is present with room for exploration and growth
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.categoryItem}>
-                <View style={[styles.categoryDot, styles.moderateDot]} />
-                <View style={styles.categoryTextContainer}>
-                  <Text style={styles.categoryTitle}>Yellow</Text>
-                  <Text style={styles.categoryDescription}>
-                    Where differences may play a more active role in the interaction
-                  </Text>
-                </View>
-              </View>
-            </View>
+           
 
             <Text style={styles.bodyText}>
               There is no "right" or "wrong" category. Each level represents a different kind of encounter — some smoother, some more challenging, all potentially meaningful.

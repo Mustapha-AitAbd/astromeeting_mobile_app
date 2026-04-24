@@ -431,7 +431,7 @@ export default function ProfileScreen({ navigation }) {
                     <>
                       <RefreshCw size={16} color="#FFFFFF" />
                       <Text style={[styles.actionButtonText, styles.actionButtonTextLight]}>
-                        Update Profile Photo
+                        Update Photo
                       </Text>
                     </>
                   )}

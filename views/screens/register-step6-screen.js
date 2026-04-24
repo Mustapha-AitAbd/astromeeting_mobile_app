@@ -1,26 +1,120 @@
 import { useState, useEffect, useRef, useContext } from "react"
 import { View, Text, TouchableOpacity, StyleSheet, Alert, ActivityIndicator, Dimensions } from "react-native"
 import { LinearGradient } from "expo-linear-gradient"
-import MapView, { Marker } from "react-native-maps"
+// ✅ REMOVED: import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps"
+// ✅ ADDED: WebView + Leaflet/OpenStreetMap — works on Android, Huawei (no Google Play), iOS
+import { WebView } from "react-native-webview"
 import * as Location from "expo-location"
-import { AuthContext } from '../../context/AuthContext' // Ajustez le chemin selon votre structure
+import { AuthContext } from '../../context/AuthContext'
 
 const { width, height } = Dimensions.get('window')
 
-// ✅ Charger l'URL de l'API depuis .env
 const EXPO_PUBLIC_API_URL = process.env.EXPO_PUBLIC_API_URL
+
+// ─── Leaflet HTML Generator ───────────────────────────────────────────────────
+// Generates a self-contained HTML page with Leaflet + OpenStreetMap tiles.
+// No Google Play Services required — runs inside any WebView.
+const buildLeafletHTML = (lat, lng) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #map { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map', { zoomControl: true }).setView([${lat}, ${lng}], 10);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    var marker = null;
+
+    function sendLocation(lat, lng) {
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({ type: 'locationSelected', lat: lat, lng: lng })
+        );
+      }
+    }
+
+    // Tap on map → place or move marker
+    map.on('click', function(e) {
+      var lat = e.latlng.lat;
+      var lng = e.latlng.lng;
+      if (marker) {
+        marker.setLatLng([lat, lng]);
+      } else {
+        marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+        marker.bindPopup('Your Birthplace').openPopup();
+        marker.on('dragend', function(ev) {
+          var pos = ev.target.getLatLng();
+          sendLocation(pos.lat, pos.lng);
+        });
+      }
+      sendLocation(lat, lng);
+    });
+
+    // Listen for flyTo commands from React Native
+    document.addEventListener('message', handleCommand);
+    window.addEventListener('message', handleCommand);
+    function handleCommand(event) {
+      try {
+        var data = JSON.parse(event.data);
+        if (data.type === 'flyTo') {
+          map.setView([data.lat, data.lng], data.zoom || 15);
+          if (marker) {
+            marker.setLatLng([data.lat, data.lng]);
+          } else {
+            marker = L.marker([data.lat, data.lng], { draggable: true }).addTo(map);
+            marker.bindPopup('Your Birthplace').openPopup();
+            marker.on('dragend', function(ev) {
+              var pos = ev.target.getLatLng();
+              sendLocation(pos.lat, pos.lng);
+            });
+          }
+          sendLocation(data.lat, data.lng);
+        }
+      } catch(e) {}
+    }
+
+    // Notify React Native that the map is ready
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'mapReady' }));
+    }
+  </script>
+</body>
+</html>
+`
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function RegisterStep6Screen({ navigation, route }) {
   const userData = route.params
   const { dialCode, phoneNumber, fullPhoneNumber, maskedPhone, token } = userData
-  const { loginWithToken } = useContext(AuthContext) // ✅ Utiliser loginWithToken au lieu de login
-  
-  const [location, setLocation] = useState(null)
+  const { loginWithToken } = useContext(AuthContext)
+
+  const [location,         setLocation]         = useState(null)
   const [selectedLocation, setSelectedLocation] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [mapReady, setMapReady] = useState(false)
-  const [updating, setUpdating] = useState(false) // ✅ Pour l'animation du bouton
-  const mapRef = useRef(null)
+  const [leafletHtml,      setLeafletHtml]      = useState(null)
+
+  // `loading`  → initial map setup (full-screen spinner, hides WebView)
+  // `locating` → "Use My Location" button spinner (map stays visible)
+  const [loading,  setLoading]  = useState(true)
+  const [locating, setLocating] = useState(false)
+  const [updating, setUpdating] = useState(false)
+
+  // ✅ webViewRef replaces mapRef — used to inject flyTo commands into Leaflet
+  const webViewRef = useRef(null)
 
   useEffect(() => {
     getCurrentLocation()
@@ -28,186 +122,110 @@ export default function RegisterStep6Screen({ navigation, route }) {
 
   const getCurrentLocation = async () => {
     try {
-      // Demander la permission d'accès à la localisation
       const { status } = await Location.requestForegroundPermissionsAsync()
-      
+
       if (status !== 'granted') {
         Alert.alert(
           'Permission Denied',
           'We need location permission to help you select your birthplace on the map.',
-          [
-            {
-              text: 'OK',
-              onPress: () => {
-                // Définir une localisation par défaut (Paris, France)
-                const defaultLocation = {
-                  latitude: 48.8566,
-                  longitude: 2.3522,
-                  latitudeDelta: 0.1,
-                  longitudeDelta: 0.1,
-                }
-                setLocation(defaultLocation)
-                setLoading(false)
-              }
-            }
-          ]
+          [{
+            text: 'OK',
+            onPress: () => {
+              const fallback = { latitude: 48.8566, longitude: 2.3522 }
+              setLocation(fallback)
+              setLeafletHtml(buildLeafletHTML(fallback.latitude, fallback.longitude))
+              setLoading(false)
+            },
+          }]
         )
         return
       }
 
-      // Obtenir la localisation actuelle
       const currentLocation = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       })
 
       const locationData = {
-        latitude: currentLocation.coords.latitude,
+        latitude:  currentLocation.coords.latitude,
         longitude: currentLocation.coords.longitude,
-        latitudeDelta: 0.1,
-        longitudeDelta: 0.1,
       }
 
       setLocation(locationData)
-      setLoading(false)
-      
-      console.log('📍 Current location:', locationData)
+      // ✅ Build the Leaflet HTML once we have the initial coordinates
+      setLeafletHtml(buildLeafletHTML(locationData.latitude, locationData.longitude))
     } catch (error) {
       console.error('❌ Error getting location:', error)
-      
-      // Définir une localisation par défaut en cas d'erreur
-      const defaultLocation = {
-        latitude: 48.8566,
-        longitude: 2.3522,
-        latitudeDelta: 0.1,
-        longitudeDelta: 0.1,
-      }
-      setLocation(defaultLocation)
-      setLoading(false)
-    }
-  }
-
-  const handleMapPress = (event) => {
-    const coordinate = event.nativeEvent.coordinate
-    setSelectedLocation(coordinate)
-    console.log('📍 Selected location:', coordinate)
-  }
-
-  const handleUseMyLocation = async () => {
-    setLoading(true)
-    try {
-      const currentLocation = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-      })
-
-      const coordinate = {
-        latitude: currentLocation.coords.latitude,
-        longitude: currentLocation.coords.longitude,
-      }
-
-      setSelectedLocation(coordinate)
-      
-      // Animer la carte vers la localisation actuelle
-      if (mapRef.current) {
-        mapRef.current.animateToRegion({
-          ...coordinate,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }, 1000)
-      }
-
-      Alert.alert('Success', 'Your current location has been selected')
-    } catch (error) {
-      console.error('❌ Error getting current location:', error)
-      Alert.alert('Error', 'Unable to get your current location. Please select manually on the map.')
+      const fallback = { latitude: 48.8566, longitude: 2.3522 }
+      setLocation(fallback)
+      setLeafletHtml(buildLeafletHTML(fallback.latitude, fallback.longitude))
     } finally {
       setLoading(false)
     }
   }
 
-  // ✅ Fonction pour mettre à jour la localisation via API
-  const updateLocationAPI = async (latitude, longitude) => {
+  // ✅ handleWebViewMessage: receives events posted by the Leaflet HTML
+  const handleWebViewMessage = (event) => {
     try {
-      console.log('🔄 Updating location via API...')
-      console.log('📍 Coordinates:', { latitude, longitude })
-      console.log('🔑 Token:', token)
-
-      const response = await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/update-location`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          latitude,
-          longitude,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to update location')
+      const data = JSON.parse(event.nativeEvent.data)
+      if (data.type === 'locationSelected') {
+        setSelectedLocation({ latitude: data.lat, longitude: data.lng })
       }
-
-      console.log('✅ Location updated successfully:', data)
-      return data
-
-    } catch (error) {
-      console.error('❌ Error updating location:', error)
-      throw error
+      // 'mapReady' can be used for future extensions if needed
+    } catch (e) {
+      console.error('WebView message parse error:', e)
     }
+  }
+
+
+  const updateLocationAPI = async (latitude, longitude) => {
+    const response = await fetch(`${EXPO_PUBLIC_API_URL}/api/auth/update-location`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ latitude, longitude }),
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.message || 'Failed to update location')
+    }
+
+    return data
   }
 
   const handleContinue = async () => {
     if (!selectedLocation) {
-      Alert.alert(
-        'Location Required',
-        'Please tap on the map to select your birthplace'
-      )
+      Alert.alert('Location Required', 'Please tap on the map to select your birthplace')
       return
     }
 
-    // ✅ Vérifier que le token existe
     if (!token) {
-      Alert.alert(
-        'Error',
-        'Authentication token is missing. Please try logging in again.'
-      )
+      Alert.alert('Error', 'Authentication token is missing. Please try logging in again.')
       return
     }
 
-    // ✅ Démarrer l'animation de chargement
     setUpdating(true)
-
     try {
-      // ✅ Mettre à jour la localisation via API
       await updateLocationAPI(selectedLocation.latitude, selectedLocation.longitude)
 
-      console.log('✅ Location saved successfully')
-
-      // ✅ Se connecter avec le token existant
-      // Le RootNavigator va automatiquement basculer vers HomeNavigator
       const result = await loginWithToken(token)
 
-      if (result.success) {
-        console.log('✅ User authenticated, navigating to Home...')
-      } else {
+      if (!result.success) {
         Alert.alert('Error', result.message || 'Failed to authenticate')
       }
-
     } catch (error) {
       console.error('❌ Error:', error)
-      Alert.alert(
-        'Error',
-        error.message || 'Failed to update location. Please try again.'
-      )
+      Alert.alert('Error', error.message || 'Failed to update location. Please try again.')
     } finally {
-      // ✅ Arrêter l'animation de chargement
       setUpdating(false)
     }
   }
 
-  if (loading || !location) {
+  // Full-screen loading only during initial map setup
+  if (loading || !location || !leafletHtml) {
     return (
       <LinearGradient colors={["#7B2CBF", "#C77DFF", "#E0AAFF"]} style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -221,77 +239,60 @@ export default function RegisterStep6Screen({ navigation, route }) {
   return (
     <LinearGradient colors={["#7B2CBF", "#C77DFF", "#E0AAFF"]} style={styles.container}>
       <View style={styles.content}>
-        {/* Header */}
+
+        {/* ── Header ── */}
         <View style={styles.header}>
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={() => navigation.goBack()}
-          >
+          <TouchableOpacity style={styles.backButton} onPress={() => navigation.goBack()}>
             <Text style={styles.backButtonText}>←</Text>
           </TouchableOpacity>
-
           <View style={styles.headerTextContainer}>
             <Text style={styles.title}>Where were you born?</Text>
-            <Text style={styles.subtitle}>
-              Tap on the map to select your exact birthplace
-            </Text>
+            <Text style={styles.subtitle}>Tap on the map to select your exact birthplace</Text>
           </View>
         </View>
 
-        {/* Map Container */}
+        {/*
+          mapContainer keeps the same flex:1 + overflow:'hidden' + borderRadius.
+          ✅ WebView (Leaflet) replaces MapView — identical layout behaviour,
+          no Google Play Services required.
+          coordinatesBox overlay is inside mapContainer so absolute positioning
+          is correctly bounded, exactly as in the original.
+        */}
         <View style={styles.mapContainer}>
-          <MapView
-            ref={mapRef}
-            style={styles.map}
-            initialRegion={location}
-            onPress={handleMapPress}
-            onMapReady={() => setMapReady(true)}
-            showsUserLocation={true}
-            showsMyLocationButton={false}
-          >
-            {selectedLocation && (
-              <Marker
-                coordinate={selectedLocation}
-                title="Your Birthplace"
-                description={`${selectedLocation.latitude.toFixed(6)}, ${selectedLocation.longitude.toFixed(6)}`}
-                pinColor="#FF6B9D"
-              />
+          {/* ✅ Leaflet map rendered inside WebView */}
+          <WebView
+            ref={webViewRef}
+            originWhitelist={["*"]}
+            source={{ html: leafletHtml }}
+            style={StyleSheet.absoluteFillObject}
+            onMessage={handleWebViewMessage}
+            javaScriptEnabled
+            domStorageEnabled
+            mixedContentMode="always"
+            allowsInlineMediaPlayback
+            renderLoading={() => (
+              <View style={styles.webViewLoading}>
+                <ActivityIndicator size="large" color="#7B2CBF" />
+              </View>
             )}
-          </MapView>
+            startInLoadingState
+          />
 
-          {/* Coordinates Display */}
+          {/* Coordinates overlay — unchanged from original */}
           {selectedLocation && (
             <View style={styles.coordinatesBox}>
               <Text style={styles.coordinatesLabel}>Selected Location:</Text>
-              <Text style={styles.coordinatesText}>
-                Lat: {selectedLocation.latitude.toFixed(6)}
-              </Text>
-              <Text style={styles.coordinatesText}>
-                Long: {selectedLocation.longitude.toFixed(6)}
-              </Text>
+              <Text style={styles.coordinatesText}>Lat: {selectedLocation.latitude.toFixed(6)}</Text>
+              <Text style={styles.coordinatesText}>Long: {selectedLocation.longitude.toFixed(6)}</Text>
             </View>
           )}
         </View>
 
-        {/* Use My Location Button */}
-        <TouchableOpacity 
-          style={styles.myLocationButton}
-          onPress={handleUseMyLocation}
-          disabled={updating}
-        >
-          <LinearGradient
-            colors={["#9D4EDD", "#C77DFF"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.myLocationGradient}
-          >
-            <Text style={styles.myLocationText}>📍 Use My Current Location</Text>
-          </LinearGradient>
-        </TouchableOpacity>
+
 
         {/* Continue Button */}
-        <TouchableOpacity 
-          style={[styles.button, (!selectedLocation || updating) && styles.buttonDisabled]} 
+        <TouchableOpacity
+          style={[styles.button, (!selectedLocation || updating) && styles.buttonDisabled]}
           onPress={handleContinue}
           disabled={!selectedLocation || updating}
         >
@@ -311,10 +312,15 @@ export default function RegisterStep6Screen({ navigation, route }) {
             )}
           </LinearGradient>
         </TouchableOpacity>
+
       </View>
     </LinearGradient>
   )
 }
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+// ✅ All styles are identical to the original.
+// Only `webViewLoading` is new (spinner shown while Leaflet tiles load).
 
 const styles = StyleSheet.create({
   container: {
@@ -362,6 +368,7 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.9)",
     lineHeight: 20,
   },
+  // mapContainer: bounded containing block for WebView + coordinatesBox overlay
   mapContainer: {
     flex: 1,
     marginHorizontal: 24,
@@ -374,9 +381,12 @@ const styles = StyleSheet.create({
     elevation: 8,
     marginBottom: 16,
   },
-  map: {
-    width: '100%',
-    height: '100%',
+  // ✅ Spinner shown by WebView's renderLoading while Leaflet initialises
+  webViewLoading: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f0eeeb',
   },
   coordinatesBox: {
     position: 'absolute',

@@ -241,7 +241,7 @@ onNewUser: (data) => {
           </Animated.View>
 
           <Animated.View style={[s.card, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
-            <Text style={s.eyebrow}>SIGN IN TO YOUR UNIVERSE</Text>
+            <Text style={s.eyebrow}>SIGN IN</Text>
 
             {error ? (
               <View style={s.errorBanner}>
@@ -334,7 +334,7 @@ onNewUser: (data) => {
           <Animated.View style={[s.footer, { opacity: fadeIn }]}>
             <Text style={s.footerText}>New to Syni?</Text>
             <TouchableOpacity onPress={() => navigation.navigate("RegisterStep1")}>
-              <Text style={s.footerLink}>Create your chart  ✦</Text>
+              <Text style={s.footerLink}>Create your account  ✦</Text>
             </TouchableOpacity>
           </Animated.View>
 

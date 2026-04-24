@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Syni",
-    "slug": "Syni",
+    "slug": "syni",
     "scheme": "com.mustapha01.syni",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -29,6 +29,7 @@
       }
     },
     "android": {
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -58,13 +59,14 @@
     "plugins": [
       "expo-web-browser",
       "@react-native-community/datetimepicker",
-      "expo-build-properties"
+      "expo-build-properties",
+      "./copy-adi-plugin.js"
     ],
     "extra": {
       "eas": {
-        "projectId": "6022dc19-a379-46d6-9d33-4e00342498ce"
+        "projectId": "f2936ba3-797c-48b6-bcc3-e2c8dd0e44b7"
       }
     },
-    "owner": "mustapha01"
+    "owner": "syniapps-organization"
   }
 }

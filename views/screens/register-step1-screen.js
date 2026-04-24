@@ -253,11 +253,11 @@ export default function RegisterStep1Screen({ navigation }) {
               </Animated.View>
             </View>
             <Text style={s.appName}>Syni</Text>
-            <Text style={s.tagline}>Begin your cosmic journey ✦</Text>
+            <Text style={s.tagline}>Begin your journey ✦</Text>
           </Animated.View>
 
           <Animated.View style={[s.card, { opacity: fadeIn, transform: [{ translateY: slideUp }] }]}>
-            <Text style={s.eyebrow}>CREATE YOUR UNIVERSE</Text>
+            <Text style={s.eyebrow}>Sign up to get started</Text>
             <Text style={s.cardTitle}>Create Account</Text>
             <Text style={s.cardSub}>Sign up to get started</Text>
 

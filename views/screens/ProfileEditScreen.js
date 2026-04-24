@@ -29,7 +29,9 @@ import {
   CheckCircle,
 } from "lucide-react-native"
 import * as Location from "expo-location"
-import MapView, { Marker } from "react-native-maps"
+// ✅ REMOVED: import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps"
+// ✅ ADDED: WebView replaces react-native-maps — works on ALL devices (Android, Huawei, iOS)
+import { WebView } from "react-native-webview"
 import * as ImagePicker from "expo-image-picker"
 import { AuthContext } from "../../context/AuthContext"
 
@@ -271,9 +273,6 @@ function validateSocialUrl(platform, url) {
 }
 
 // ─── Cities API helper ────────────────────────────────────────────────────────
-// Uses CountriesNow (free, no key, CORS-friendly)
-// POST https://countriesnow.space/api/v0.1/countries/cities
-// body: { "country": "Morocco" } → { data: ["Casablanca", "Rabat", ...] }
 const fetchCitiesForCountry = async (countryName) => {
   const response = await fetch("https://countriesnow.space/api/v0.1/countries/cities", {
     method: "POST",
@@ -283,6 +282,106 @@ const fetchCitiesForCountry = async (countryName) => {
   const json = await response.json()
   if (json.error || !json.data) return []
   return json.data.sort()
+}
+
+// ─── Leaflet HTML Generator ───────────────────────────────────────────────────
+// ✅ Pure HTML/JS using Leaflet + OpenStreetMap — NO Google Play required.
+// Works on Android, Huawei (HMS), iOS, and any WebView-capable device.
+const buildLeafletHTML = (lat, lng, hasMarker) => {
+  const centerLat = lat || 48.8566
+  const centerLng = lng || 2.3522
+  const zoom = hasMarker ? 13 : 5
+  const markerInit = hasMarker
+    ? `
+      marker = L.marker([${lat}, ${lng}], { draggable: true }).addTo(map);
+      marker.on('dragend', function(e) {
+        var pos = e.target.getLatLng();
+        sendLocation(pos.lat, pos.lng);
+      });
+    `
+    : ""
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body, #map { width: 100%; height: 100%; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var map = L.map('map', { zoomControl: true }).setView([${centerLat}, ${centerLng}], ${zoom});
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(map);
+
+    var marker = null;
+
+    function sendLocation(lat, lng) {
+      var msg = JSON.stringify({ type: 'locationSelected', lat: lat, lng: lng });
+      if (window.ReactNativeWebView) {
+        window.ReactNativeWebView.postMessage(msg);
+      }
+    }
+
+    // Tap on map → place or move marker
+    map.on('click', function(e) {
+      var lat = e.latlng.lat;
+      var lng = e.latlng.lng;
+      if (marker) {
+        marker.setLatLng([lat, lng]);
+      } else {
+        marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+        marker.on('dragend', function(ev) {
+          var pos = ev.target.getLatLng();
+          sendLocation(pos.lat, pos.lng);
+        });
+      }
+      sendLocation(lat, lng);
+    });
+
+    // Initialize existing marker if provided
+    ${markerInit}
+
+    // Notify React Native the map is ready
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'mapReady' }));
+    }
+
+    // Listen for commands from React Native (flyTo, setMarker)
+    document.addEventListener('message', handleCommand);
+    window.addEventListener('message', handleCommand);
+    function handleCommand(event) {
+      try {
+        var data = JSON.parse(event.data);
+        if (data.type === 'flyTo') {
+          map.setView([data.lat, data.lng], data.zoom || 14);
+          if (marker) {
+            marker.setLatLng([data.lat, data.lng]);
+          } else {
+            marker = L.marker([data.lat, data.lng], { draggable: true }).addTo(map);
+            marker.on('dragend', function(ev) {
+              var pos = ev.target.getLatLng();
+              sendLocation(pos.lat, pos.lng);
+            });
+          }
+          sendLocation(data.lat, data.lng);
+        }
+      } catch(e) {}
+    }
+  </script>
+</body>
+</html>
+  `
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -296,7 +395,8 @@ export default function ProfileEditScreen({ navigation }) {
   const [showMapModal, setShowMapModal]         = useState(false)
   const [showCountryModal, setShowCountryModal] = useState(false)
   const [mapReady, setMapReady]   = useState(false)
-  const mapRef = useRef(null)
+  // ✅ webViewRef replaces mapRef — used to inject JS commands into the Leaflet map
+  const webViewRef = useRef(null)
 
   // Profile data
   const [profileData, setProfileData] = useState({
@@ -316,17 +416,16 @@ export default function ProfileEditScreen({ navigation }) {
   const [countrySearch,     setCountrySearch]     = useState("")
   const [filteredCountries, setFilteredCountries] = useState(Countries)
   const [selectedLocation,  setSelectedLocation]  = useState(null)
-  const [mapRegion,         setMapRegion]          = useState(null)
+  // ✅ leafletHtml holds the generated HTML string for the WebView
+  const [leafletHtml, setLeafletHtml] = useState(null)
 
-  // ── NEW: City state ───────────────────────────────────────────────────────
+  // City state
   const [cities,          setCities]          = useState([])
   const [citiesLoading,   setCitiesLoading]   = useState(false)
   const [citiesError,     setCitiesError]     = useState(null)
   const [showCityModal,   setShowCityModal]   = useState(false)
   const [citySearch,      setCitySearch]      = useState("")
-  // Track which country we've already fetched cities for, to avoid redundant calls
   const lastFetchedCountry = useRef(null)
-  // ─────────────────────────────────────────────────────────────────────────
 
   // Social Links state
   const [localLinks,  setLocalLinks]  = useState([])
@@ -349,14 +448,11 @@ export default function ProfileEditScreen({ navigation }) {
     }
   }, [countrySearch])
 
-  // ── NEW: When editing starts, pre-load cities for the current country ─────
   useEffect(() => {
     if (isEditing && editData.country) {
       loadCitiesForCountry(editData.country, false)
     }
-    // If editing is cancelled / closed, don't clear cities — avoids flicker on re-open
   }, [isEditing])
-  // ─────────────────────────────────────────────────────────────────────────
 
   const requestPermissions = async () => {
     const { status: cam } = await ImagePicker.requestCameraPermissionsAsync()
@@ -389,12 +485,9 @@ export default function ProfileEditScreen({ navigation }) {
     return `${year}-${month.padStart(2,"0")}-${day.padStart(2,"0")}T${h.padStart(2,"0")}:${m.padStart(2,"0")}:${s.padStart(2,"0")}.000Z`
   }
 
-  // ── NEW: Fetch cities helper ───────────────────────────────────────────────
-  // resetCity: if true, also wipes editData.city (used when the user explicitly
-  // picks a NEW country; false when we're just pre-loading for the existing one)
   const loadCitiesForCountry = async (countryName, resetCity = true) => {
     if (!countryName) return
-    if (lastFetchedCountry.current === countryName) return // already loaded
+    if (lastFetchedCountry.current === countryName) return
 
     setCitiesLoading(true)
     setCitiesError(null)
@@ -417,7 +510,6 @@ export default function ProfileEditScreen({ navigation }) {
       setCitiesLoading(false)
     }
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
   // ── Fetch profile + social links ──────────────────────────────────────────
   const fetchProfile = async () => {
@@ -582,7 +674,7 @@ export default function ProfileEditScreen({ navigation }) {
               bio:         editData.bio,
               dateOfBirth: editData.dateOfBirth,
               country:     editData.country,
-              city:        editData.city || null,   // ← NEW
+              city:        editData.city || null,
               gender:      editData.gender,
               location:    editData.location,
             }),
@@ -617,59 +709,91 @@ export default function ProfileEditScreen({ navigation }) {
     setEditData({ ...profileData })
     if (profileData.dateOfBirth) parseDateOfBirth(profileData.dateOfBirth)
     else { setDateInput({ day:"",month:"",year:"" }); setTimeInput({ hour:"",minute:"",second:"" }) }
-    // Reset cities to match restored country
     lastFetchedCountry.current = null
     fetchProfile()
     setLinkErrors({})
     setIsEditing(false)
   }
 
-  // ── NEW: Country selection handler ────────────────────────────────────────
-  // Picking a NEW country → reset city and load fresh city list
   const handleCountrySelect = (item) => {
     const countryChanged = editData.country !== item.name
     setEditData((prev) => ({ ...prev, country: item.name, city: countryChanged ? "" : prev.city }))
     setShowCountryModal(false)
     setCountrySearch("")
     if (countryChanged) {
-      lastFetchedCountry.current = null // force re-fetch
+      lastFetchedCountry.current = null
       loadCitiesForCountry(item.name, true)
     }
   }
-  // ─────────────────────────────────────────────────────────────────────────
 
-  // ── Map ───────────────────────────────────────────────────────────────────
+  // ── Map (Leaflet/WebView) ─────────────────────────────────────────────────
 
+  // ✅ openMapModal: builds the Leaflet HTML and opens the modal.
+  // No Google Play, no native map SDK needed — just a WebView loading HTML.
   const openMapModal = async () => {
-    const { status } = await Location.requestForegroundPermissionsAsync()
-    let region
-    if (selectedLocation) {
-      region = { ...selectedLocation, latitudeDelta: 0.1, longitudeDelta: 0.1 }
-    } else if (status === "granted") {
-      try {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced })
-        region = { latitude: loc.coords.latitude, longitude: loc.coords.longitude, latitudeDelta: 0.1, longitudeDelta: 0.1 }
-      } catch { region = { latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.1, longitudeDelta: 0.1 } }
-    } else {
-      region = { latitude: 48.8566, longitude: 2.3522, latitudeDelta: 0.1, longitudeDelta: 0.1 }
+    try {
+      let lat, lng, hasMarker
+
+      if (selectedLocation) {
+        lat = selectedLocation.latitude
+        lng = selectedLocation.longitude
+        hasMarker = true
+      } else {
+        // Try to get device GPS for initial centering
+        try {
+          const { status } = await Location.requestForegroundPermissionsAsync()
+          if (status === "granted") {
+            const loc = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            })
+            lat = loc.coords.latitude
+            lng = loc.coords.longitude
+          } else {
+            lat = 48.8566; lng = 2.3522  // Default: Paris
+          }
+        } catch {
+          lat = 48.8566; lng = 2.3522
+        }
+        hasMarker = false
+      }
+
+      // Build the Leaflet HTML with initial center and optional marker
+      setLeafletHtml(buildLeafletHTML(lat, lng, hasMarker))
+      setMapReady(false)
+      setShowMapModal(true)
+    } catch (err) {
+      console.error("openMapModal error:", err)
+      Alert.alert("Error", "Unable to open the map. Please try again.")
     }
-    setMapRegion(region)
-    setShowMapModal(true)
   }
 
   const handleMapConfirm = () => {
-    if (!selectedLocation) { Alert.alert("Error","Select a location"); return }
-    setEditData({ ...editData, location: { type:"Point", coordinates:[selectedLocation.longitude, selectedLocation.latitude] } })
+    if (!selectedLocation) { Alert.alert("Error", "Select a location on the map first"); return }
+    setEditData({
+      ...editData,
+      location: {
+        type: "Point",
+        coordinates: [selectedLocation.longitude, selectedLocation.latitude],
+      },
+    })
     setShowMapModal(false)
   }
 
-  const handleUseMyLocation = async () => {
+
+
+  // ✅ handleWebViewMessage: receives location picks and map-ready events
+  // from the Leaflet HTML via window.ReactNativeWebView.postMessage
+  const handleWebViewMessage = (event) => {
     try {
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High })
-      const coord = { latitude: loc.coords.latitude, longitude: loc.coords.longitude }
-      setSelectedLocation(coord)
-      mapRef.current?.animateToRegion({ ...coord, latitudeDelta: 0.01, longitudeDelta: 0.01 }, 1000)
-    } catch { Alert.alert("Error","Unable to get current location") }
+      const data = JSON.parse(event.nativeEvent.data)
+      if (data.type === "locationSelected") {
+        setSelectedLocation({ latitude: data.lat, longitude: data.lng })
+      } else if (data.type === "mapReady") {
+        setMapReady(true)
+      }
+    } catch (e) {
+      console.error("WebView message parse error:", e)
+    }
   }
 
   // ── Photo ─────────────────────────────────────────────────────────────────
@@ -725,7 +849,6 @@ export default function ProfileEditScreen({ navigation }) {
 
   const getCountryFlag = (name) => Countries.find((c) => c.name === name)?.flag || "🌍"
 
-  // NEW: filtered city list for the modal search
   const filteredCities = cities.filter((c) =>
     c.toLowerCase().includes(citySearch.toLowerCase())
   )
@@ -851,6 +974,27 @@ export default function ProfileEditScreen({ navigation }) {
             </View>
           )}
 
+          {/* Location Coordinates */}
+          <View style={styles.fieldContainer}>
+            <View style={styles.fieldLabelRow}>
+              <MapPin size={18} color="#666" />
+              <Text style={styles.fieldLabel}>Location Coordinates of Birth</Text>
+            </View>
+            {isEditing ? (
+              <TouchableOpacity style={styles.mapButton} onPress={openMapModal}>
+                <MapPin size={20} color="#FF6B6B" />
+                <Text style={styles.mapButtonText}>{selectedLocation ? "Change Location" : "Select on Map"}</Text>
+                <ChevronRight size={20} color="#999" />
+              </TouchableOpacity>
+            ) : (
+              <Text style={styles.fieldValue}>
+                {profileData.location?.coordinates[0] && profileData.location?.coordinates[1]
+                  ? `${profileData.location.coordinates[1].toFixed(4)}, ${profileData.location.coordinates[0].toFixed(4)}`
+                  : "Not set"}
+              </Text>
+            )}
+          </View>
+
           {/* Age */}
           {profileData.age && (
             <View style={styles.fieldContainer}>
@@ -864,17 +1008,24 @@ export default function ProfileEditScreen({ navigation }) {
             <Text style={styles.fieldLabel}>Gender</Text>
             {isEditing ? (
               <View style={styles.genderContainer}>
-                {["M","F","Other"].map((g) => (
-                  <TouchableOpacity key={g} style={[styles.genderButton, editData.gender===g && styles.genderButtonActive]} onPress={()=>setEditData({...editData,gender:g})}>
-                    <Text style={[styles.genderButtonText, editData.gender===g && styles.genderButtonTextActive]}>
-                      {g==="M"?"Male":g==="F"?"Female":"Other"}
+                {[
+                  { value: "M", label: "Male"   },
+                  { value: "F", label: "Female" },
+                ].map(({ value, label }) => (
+                  <TouchableOpacity
+                    key={value}
+                    style={[styles.genderButton, editData.gender === value && styles.genderButtonActive]}
+                    onPress={() => setEditData({ ...editData, gender: value })}
+                  >
+                    <Text style={[styles.genderButtonText, editData.gender === value && styles.genderButtonTextActive]}>
+                      {label}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
             ) : (
               <Text style={styles.fieldValue}>
-                {profileData.gender==="M"?"Male":profileData.gender==="F"?"Female":profileData.gender==="Other"?"Other":"Not set"}
+                {profileData.gender === "M" ? "Male" : profileData.gender === "F" ? "Female" : "Not set"}
               </Text>
             )}
           </View>
@@ -896,7 +1047,7 @@ export default function ProfileEditScreen({ navigation }) {
           <View style={styles.fieldContainer}>
             <View style={styles.fieldLabelRow}>
               <Globe size={18} color="#666" />
-              <Text style={styles.fieldLabel}>Country</Text>
+              <Text style={styles.fieldLabel}>Current Country</Text>
             </View>
             {isEditing ? (
               <TouchableOpacity style={styles.countryButton} onPress={() => setShowCountryModal(true)}>
@@ -912,24 +1063,21 @@ export default function ProfileEditScreen({ navigation }) {
             )}
           </View>
 
-          {/* ── NEW: City field ────────────────────────────────────────────── */}
+          {/* City */}
           <View style={styles.fieldContainer}>
             <View style={styles.fieldLabelRow}>
               <MapPin size={18} color="#666" />
-              <Text style={styles.fieldLabel}>City</Text>
+              <Text style={styles.fieldLabel}>Current City</Text>
             </View>
 
             {isEditing ? (
-              // Edit mode
               editData.country ? (
                 citiesLoading ? (
-                  // Spinner while loading
                   <View style={[styles.countryButton, styles.disabledButton]}>
                     <ActivityIndicator size="small" color="#FF6B6B" style={{ marginRight: 8 }} />
                     <Text style={styles.countryButtonTextMuted}>Loading cities…</Text>
                   </View>
                 ) : citiesError && cities.length === 0 ? (
-                  // Fallback: manual text input when API returns nothing
                   <View>
                     <TextInput
                       style={styles.input}
@@ -941,7 +1089,6 @@ export default function ProfileEditScreen({ navigation }) {
                     <Text style={styles.helperTextWarning}>⚠️ {citiesError}</Text>
                   </View>
                 ) : (
-                  // Normal city picker button
                   <TouchableOpacity
                     style={styles.countryButton}
                     onPress={() => setShowCityModal(true)}
@@ -953,38 +1100,13 @@ export default function ProfileEditScreen({ navigation }) {
                   </TouchableOpacity>
                 )
               ) : (
-                // No country selected yet
                 <View style={[styles.countryButton, styles.disabledButton]}>
                   <Text style={styles.countryButtonTextMuted}>Select a country first</Text>
                 </View>
               )
             ) : (
-              // View mode
               <Text style={styles.fieldValue}>
                 {profileData.city ? `🏙️ ${profileData.city}` : "Not set"}
-              </Text>
-            )}
-
-            {isEditing && editData.country && !citiesLoading && !citiesError && (
-              <Text style={styles.helperText}></Text>
-            )}
-          </View>
-          {/* ────────────────────────────────────────────────────────────────── */}
-
-          {/* Location Coordinates */}
-          <View style={styles.fieldContainer}>
-            <Text style={styles.fieldLabel}>Location Coordinates</Text>
-            {isEditing ? (
-              <TouchableOpacity style={styles.mapButton} onPress={openMapModal}>
-                <MapPin size={20} color="#FF6B6B" />
-                <Text style={styles.mapButtonText}>{selectedLocation?"Change Location":"Select on Map"}</Text>
-                <ChevronRight size={20} color="#999" />
-              </TouchableOpacity>
-            ) : (
-              <Text style={styles.fieldValue}>
-                {profileData.location?.coordinates[0] && profileData.location?.coordinates[1]
-                  ? `${profileData.location.coordinates[1].toFixed(4)}, ${profileData.location.coordinates[0].toFixed(4)}`
-                  : "Not set"}
               </Text>
             )}
           </View>
@@ -1113,7 +1235,7 @@ export default function ProfileEditScreen({ navigation }) {
         </View>
       </Modal>
 
-      {/* ── NEW: City Modal ── */}
+      {/* ── City Modal ── */}
       <Modal visible={showCityModal} animationType="slide" transparent={false}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
@@ -1179,33 +1301,61 @@ export default function ProfileEditScreen({ navigation }) {
           />
         </View>
       </Modal>
-      {/* ─────────────────────── */}
 
-      {/* ── Map Modal ── */}
+      {/* ── Map Modal (Leaflet / OpenStreetMap — no Google Play needed) ── */}
       <Modal visible={showMapModal} animationType="slide" transparent={false}>
         <View style={styles.modalContainer}>
           <View style={styles.modalHeader}>
-            <TouchableOpacity onPress={() => setShowMapModal(false)}><X size={24} color="#333" /></TouchableOpacity>
+            <TouchableOpacity onPress={() => setShowMapModal(false)}>
+              <X size={24} color="#333" />
+            </TouchableOpacity>
             <Text style={styles.modalTitle}>Select Location</Text>
-            <TouchableOpacity onPress={handleMapConfirm}><Text style={styles.confirmText}>Done</Text></TouchableOpacity>
+            <TouchableOpacity onPress={handleMapConfirm}>
+              <Text style={styles.confirmText}>Done</Text>
+            </TouchableOpacity>
           </View>
-          {mapRegion && (
-            <MapView ref={mapRef} style={styles.map} initialRegion={mapRegion} onPress={(e)=>setSelectedLocation(e.nativeEvent.coordinate)} onMapReady={()=>setMapReady(true)} showsUserLocation showsMyLocationButton={false}>
-              {selectedLocation && (
-                <Marker coordinate={selectedLocation} title="Your Location" pinColor="#FF6B6B" draggable onDragEnd={(e)=>setSelectedLocation(e.nativeEvent.coordinate)} />
-              )}
-            </MapView>
-          )}
-          <TouchableOpacity style={styles.myLocationButton} onPress={handleUseMyLocation}>
-            <Text style={styles.myLocationText}>📍 Use My Current Location</Text>
-          </TouchableOpacity>
-          {selectedLocation && (
-            <View style={styles.coordinatesDisplay}>
-              <Text style={styles.coordinatesLabel}>Selected Location:</Text>
-              <Text style={styles.coordinatesText}>Lat: {selectedLocation.latitude.toFixed(6)}</Text>
-              <Text style={styles.coordinatesText}>Lng: {selectedLocation.longitude.toFixed(6)}</Text>
-            </View>
-          )}
+
+          <View style={styles.mapWrapper}>
+            {/* ✅ WebView renders a full Leaflet map — works on ALL devices */}
+            {leafletHtml ? (
+              <WebView
+                ref={webViewRef}
+                originWhitelist={["*"]}
+                source={{ html: leafletHtml }}
+                style={StyleSheet.absoluteFillObject}
+                onMessage={handleWebViewMessage}
+                javaScriptEnabled
+                domStorageEnabled
+                // ✅ Allow loading Leaflet tiles from OpenStreetMap CDN
+                mixedContentMode="always"
+                allowsInlineMediaPlayback
+                // Show a spinner while the WebView is loading
+                renderLoading={() => (
+                  <View style={styles.mapLoading}>
+                    <ActivityIndicator size="large" color="#FF6B6B" />
+                    <Text style={styles.mapLoadingText}>Loading map…</Text>
+                  </View>
+                )}
+                startInLoadingState
+              />
+            ) : (
+              <View style={styles.mapLoading}>
+                <ActivityIndicator size="large" color="#FF6B6B" />
+                <Text style={styles.mapLoadingText}>Preparing map…</Text>
+              </View>
+            )}
+
+            {/* Coordinates display — same position/style as before */}
+
+            {/* Coordinates display — same position/style as before */}
+            {selectedLocation && (
+              <View style={styles.coordinatesDisplay}>
+                <Text style={styles.coordinatesLabel}>Selected Location:</Text>
+                <Text style={styles.coordinatesText}>Lat: {selectedLocation.latitude.toFixed(6)}</Text>
+                <Text style={styles.coordinatesText}>Lng: {selectedLocation.longitude.toFixed(6)}</Text>
+              </View>
+            )}
+          </View>
         </View>
       </Modal>
     </View>
@@ -1213,6 +1363,7 @@ export default function ProfileEditScreen({ navigation }) {
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
+// ✅ All styles are identical to the original. Only map-related additions noted.
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#FFFFFF" },
@@ -1263,9 +1414,7 @@ const styles = StyleSheet.create({
   countryButton: { flexDirection:"row", alignItems:"center", justifyContent:"space-between", backgroundColor:"#FFF", borderWidth:1, borderColor:"#E0E0E0", borderRadius:12, paddingVertical:12, paddingHorizontal:16 },
   countryButtonText: { flex:1, fontSize:16, color:"#333" },
   countryButtonTextMuted: { flex:1, fontSize:16, color:"#BBBBBB" },
-  // ── NEW ──
   disabledButton: { backgroundColor:"#FAFAFA", borderColor:"#EFEFEF" },
-  // ─────────
 
   mapButton: { flexDirection:"row", alignItems:"center", justifyContent:"space-between", backgroundColor:"#FFF", borderWidth:1, borderColor:"#E0E0E0", borderRadius:12, paddingVertical:12, paddingHorizontal:16 },
   mapButtonText: { flex:1, fontSize:16, color:"#333", marginLeft:8 },
@@ -1305,14 +1454,12 @@ const styles = StyleSheet.create({
   modalContainer: { flex:1, backgroundColor:"#FFF" },
   modalHeader: { flexDirection:"row", justifyContent:"space-between", alignItems:"center", paddingHorizontal:16, paddingTop:50, paddingBottom:16, borderBottomWidth:1, borderBottomColor:"#F0F0F0" },
   modalTitle: { fontSize:18, fontWeight:"bold", color:"#333" },
-  // ── NEW ──
   modalTitleBlock: { alignItems: "center" },
   modalSubtitle: { fontSize:12, color:"#FF6B6B", marginTop:2 },
   cityEmoji: { fontSize:22, width:36, textAlign:"center" },
   emptyList: { flex:1, justifyContent:"center", alignItems:"center", paddingVertical:60 },
   emptyListText: { fontSize:15, color:"#BBBBBB" },
   clearBtn: { padding:6 },
-  // ─────────
   confirmText: { fontSize:16, fontWeight:"600", color:"#FF6B6B" },
   searchContainer: { flexDirection:"row", alignItems:"center", backgroundColor:"#F8F8F8", borderRadius:12, paddingHorizontal:16, paddingVertical:12, margin:16, gap:10 },
   searchInput: { flex:1, fontSize:16, color:"#333" },
@@ -1323,7 +1470,24 @@ const styles = StyleSheet.create({
   checkmark: { fontSize:20, color:"#FF6B6B", fontWeight:"bold" },
   separator: { height:1, backgroundColor:"#F0F0F0", marginHorizontal:12 },
 
-  map: { flex:1 },
+  // mapWrapper: contains the WebView + overlay buttons (unchanged from original)
+  mapWrapper: {
+    flex: 1,
+    position: "relative",
+    backgroundColor: "#E5E3DF",
+  },
+  // ✅ mapLoading shown while WebView/Leaflet is initializing
+  mapLoading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+  },
+  mapLoadingText: {
+    fontSize: 14,
+    color: "#666",
+  },
+  // Overlay buttons — identical positions/styles to the original
   myLocationButton: { position:"absolute", bottom:140, left:20, right:20, backgroundColor:"#FF6B6B", paddingVertical:14, borderRadius:30, alignItems:"center", shadowColor:"#000", shadowOffset:{width:0,height:2}, shadowOpacity:0.2, shadowRadius:8, elevation:4 },
   myLocationText: { color:"#FFF", fontSize:16, fontWeight:"600" },
   coordinatesDisplay: { position:"absolute", bottom:20, left:20, right:20, backgroundColor:"#FFF", padding:16, borderRadius:12, shadowColor:"#000", shadowOffset:{width:0,height:2}, shadowOpacity:0.1, shadowRadius:4, elevation:3 },

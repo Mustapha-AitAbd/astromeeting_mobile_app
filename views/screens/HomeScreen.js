@@ -173,10 +173,7 @@ const UserCard = ({
               resizeMode="cover"
               blurRadius={isHighCompatibilityLocked ? 10 : 0}
             />
-            <View style={s.gradientOverlay}>
-              <View style={s.gradientTop} />
-              <View style={s.gradientBottom} />
-            </View>
+           
           </>
         ) : (
           <View style={s.placeholderImage}>
